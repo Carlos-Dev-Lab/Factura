@@ -25,6 +25,7 @@ Corre con Docker en un equipo propio (PC, mini‑servidor o VPS), funciona en ce
 13. [Operación y solución de problemas](#operación-y-solución-de-problemas)
 14. [Desarrollo](#desarrollo)
 15. [Estructura del proyecto](#estructura-del-proyecto)
+16. [Licencia](#licencia)
 
 ---
 
@@ -511,6 +512,7 @@ Al terminar, eliminar la base de pruebas con `docker rm -f factura-test-db`.
 factura/
 ├── docker-compose.yml        Servicios: db, backend, worker y frontend
 ├── .env.example              Plantilla de configuración (copiar como .env)
+├── LICENSE                   Licencia MIT
 ├── backup/
 │   └── backup.sh             Respaldo diario (corre dentro del contenedor db)
 ├── backend/                  API · Python 3.12 · FastAPI · SQLAlchemy 2 · Alembic
@@ -543,3 +545,9 @@ factura/
         ├── lib/              Formato de montos y fechas, RUC, PWA
         └── styles/           Estilos
 ```
+
+---
+
+## Licencia
+
+Distribuido bajo la licencia **MIT**: se puede usar, copiar, modificar y distribuir libremente, también con fines comerciales, siempre que se mantenga el aviso de copyright y de licencia. Ver el archivo [LICENSE](LICENSE).
