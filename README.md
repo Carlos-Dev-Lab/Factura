@@ -87,20 +87,20 @@ El proyecto levanta **4 contenedores**, definidos en `docker-compose.yml` bajo e
 
 ### `frontend` — Nginx + React
 
-- **Construcción en dos etapas:** `node:22-alpine` compila la aplicación React con Vite; el resultado se copia a `nginx-unprivileged:1.27-alpine`, que no incluye Node ni el código fuente.
+- **Construcción en dos etapas:** `node:22-alpine` compila la aplicación React con Vite; el resultado se copia a `nginx-unprivileged:1.30-alpine` (rama estable de nginx), que no incluye Node ni el código fuente. Las dos imágenes están fijadas por *digest*.
 - **Sirve la aplicación** (HTML, JS, CSS, íconos, manifiesto PWA y *service worker*).
 - **Reenvía `/api/`** al contenedor `backend` por la red interna de Docker.
-- **Protege la API:** límite de pedidos por IP, tamaño máximo de cada pedido, corte de conexiones lentas y cabeceras de seguridad (CSP, `X-Frame-Options`, etc.).
+- **Protege la API:** límite de pedidos por dispositivo de confianza (o por IP si no lo es), tamaño máximo de cada pedido, corte de conexiones lentas y cabeceras de seguridad (CSP, `X-Frame-Options`, etc.).
 - Corre **sin root**, sin capacidades del kernel.
 
 ### `backend` — API (FastAPI)
 
-- Imagen `python:3.12-slim` con **Tesseract OCR** (español e inglés).
+- Imagen `python:3.12-slim` (fijada por *digest*) con **Tesseract OCR** (español e inglés). Las dependencias de Python se instalan desde un lock con hashes (`requirements.txt`): un paquete alterado hace fallar la construcción.
 - **Al arrancar aplica las migraciones pendientes** de la base (`alembic upgrade head`) y luego inicia la API con Uvicorn (`WEB_CONCURRENCY` procesos, 2 por defecto).
 - Atiende todo `/api/v1`: sesiones (también con Google), facturas (OCR y factura electrónica), cuentas, movimientos, categorías, pagos programados, reportes, importación y exportación.
 - Guarda los archivos subidos en el volumen `factura_uploads` (`/data/uploads`).
 - Lee la carpeta de respaldos **en solo lectura**, únicamente para mostrar en *Ajustes* cuándo fue el último.
-- Corre como el usuario sin privilegios `factura`. Chequeo de salud: `GET /api/health`.
+- Corre como el usuario sin privilegios `factura` y entra a la base con el rol `factura_app`, que no es superusuario. Chequeo de salud: `GET /api/health`.
 
 ### `worker` — tareas en segundo plano
 
@@ -109,12 +109,13 @@ Usa la imagen del backend con otro comando (`python -m app.worker`):
 - **Cada 30 segundos** revisa los avisos de cada usuario: a la hora elegida (8:00 por defecto) manda el resumen diario y, durante el día, solo lo urgente; nunca después de las 22:00.
 - **Telegram:** si hay `TELEGRAM_BOT_TOKEN`, atiende los mensajes del bot para vincular cuentas.
 - **Email:** si hay `SMTP_USER` y `SMTP_PASSWORD`, también manda los avisos por correo a quien lo activó.
-- **Mantenimiento diario a las 4:00:** vacía de la papelera lo que tiene más de 30 días (con sus archivos), borra archivos subidos que nunca se asociaron a una factura, limpia los intentos de inicio de sesión viejos y el historial de avisos de más de 120 días.
+- **Mantenimiento diario a las 4:00:** vacía de la papelera lo que tiene más de 30 días (con sus archivos), borra archivos subidos que nunca se asociaron a una factura, limpia los intentos de inicio de sesión viejos, las sesiones cerradas que ya vencieron y el historial de avisos de más de 120 días.
 - Si se levantan varias copias, solo una trabaja (bloqueo en PostgreSQL).
 
 ### `db` — PostgreSQL 16 y respaldo diario
 
 - **Base de datos** de la aplicación. Los datos viven en el volumen `factura_db_data`; el puerto no se publica fuera de Docker.
+- **Rol de la aplicación:** al arrancar, `db/roles.sh` prepara `factura_app`, dueño de la base y de sus tablas pero sin privilegios de superusuario, y es con ese rol que entran `backend` y `worker`. El superusuario `factura` solo puede entrar desde dentro del contenedor (respaldos y administración). Así, una inyección SQL o un backend comprometido no pueden ejecutar programas ni leer archivos del servidor de base. El contenedor figura como listo recién cuando el rol está preparado.
 - **Respaldo automático:** junto con PostgreSQL corre en segundo plano `backup/backup.sh`, que todos los días a las `BACKUP_HOUR` (3:00 por defecto) guarda en la carpeta del servidor `BACKUP_DIR`:
   - `factura-db-AAAAMMDD-HHMM.dump`: copia completa de la base (`pg_dump`, formato *custom*).
   - `factura-archivos-AAAAMMDD-HHMM.tgz`: todos los archivos de las facturas.
@@ -220,9 +221,9 @@ Toda la configuración está en `.env` (no se sube a git). Después de modificar
 | Qué cambió | Comando | Qué ocurre |
 |---|---|---|
 | Valores de `.env` | `docker compose up -d` | Se recrean los contenedores que usan esas variables. |
-| Código del backend, `requirements.txt` o `backend/Dockerfile` | `docker compose up -d --build` | Se reconstruye la imagen y se recrean `backend` y `worker`. Las migraciones nuevas se aplican solas al arrancar. |
+| Código del backend, dependencias (`requirements.in` y su lock `requirements.txt`) o `backend/Dockerfile` | `docker compose up -d --build` | Se reconstruye la imagen y se recrean `backend` y `worker`. Las migraciones nuevas se aplican solas al arrancar. |
 | Código del frontend (`frontend/src`, `public/`) o configuración de Nginx | `docker compose up -d --build` | Se reconstruye y recrea `frontend`. |
-| `backup/backup.sh` | `docker compose restart db` | El script se lee al arrancar el contenedor. La base se reinicia en unos segundos. |
+| `backup/backup.sh` o `db/roles.sh` | `docker compose restart db` | Los scripts se leen al arrancar el contenedor. La base se reinicia en unos segundos. |
 | `docker-compose.yml` | `docker compose up -d --remove-orphans` | Aplica los cambios y elimina contenedores de servicios que ya no existen. |
 
 ### Actualizar a una versión nueva
@@ -292,11 +293,12 @@ docker compose stop backend worker
 docker compose exec db dropdb -U factura factura
 docker compose exec db createdb -U factura factura
 docker compose exec db pg_restore -U factura -d factura --no-owner /backups/factura-db-AAAAMMDD-HHMM.dump
+docker compose exec db sh /roles.sh
 docker compose run --rm --no-deps backend sh -c "find /data/uploads -mindepth 1 -delete && tar xzf /backups/factura-archivos-AAAAMMDD-HHMM.tgz -C /data/uploads"
 docker compose start backend worker
 ```
 
-Los comandos funcionan igual en PowerShell, Linux y macOS.
+Los comandos funcionan igual en PowerShell, Linux y macOS. `roles.sh` le devuelve las tablas restauradas al rol de la aplicación: sin ese paso, el backend no podría leerlas. Sirve también con respaldos hechos por versiones anteriores.
 
 ### Mover la instalación a otro servidor
 
@@ -371,8 +373,8 @@ Aplicar con `docker compose up -d`. Al recargar la pantalla de ingreso aparece *
 
 ### Cómo se comporta
 
-- **Ya tenés cuenta con el mismo Gmail:** al entrar con Google se vincula sola. Lo mismo con un email de Google Workspace.
-- **Tu cuenta usa otro email** (por ejemplo `@hotmail.com`): entrá con tu contraseña y tocá **Ajustes → Seguridad → Vincular cuenta de Google**. Por seguridad, con esas direcciones el vínculo no se hace solo.
+- **Ya tenés cuenta con contraseña** (con el mismo email o con otro): entrá con tu contraseña y tocá **Ajustes → Seguridad → Vincular cuenta de Google**. Desde ahí en adelante podés entrar con cualquiera de los dos.
+- **Por qué no se vincula sola, aunque sea el mismo Gmail:** el registro con contraseña no comprueba el email, así que otra persona pudo crear antes una cuenta con tu dirección. Si se vinculara sola, cargarías tus datos en una cuenta cuya contraseña conoce otro.
 - **Cuentas nuevas:** Google crea una cuenta solo si el registro está abierto (el primer usuario, o `ALLOW_REGISTRATION=true`), igual que el registro con contraseña.
 - **Cuenta creada con Google:** puede crearse una contraseña en **Ajustes → Seguridad**. Para desvincular Google hace falta tener contraseña, si no, no habría forma de entrar.
 - **Privacidad:** la app no guarda ningún token de Google, solo el identificador de la cuenta y su email.
@@ -429,12 +431,12 @@ Cada aviso se envía una sola vez; lo vencido se recuerda una vez por semana.
 ## Seguridad
 
 - **Contraseñas** con hash Argon2, mínimo 10 caracteres; se rechazan las obvias o las que contienen el email.
-- **Sesión** en cookie `HttpOnly` y `SameSite=Strict` con token firmado y vencimiento; protección **CSRF** en toda escritura. Cambiar la contraseña cierra las demás sesiones.
-- **Fuerza bruta:** 5 intentos de ingreso cada 5 minutos por IP y email, más límites por IP en Nginx.
+- **Sesión** en cookie `HttpOnly` y `SameSite=Strict` con token firmado y vencimiento; protección **CSRF** en toda escritura. Cerrar sesión anula el token en el servidor (aunque alguien lo haya copiado). Cambiar la contraseña o **Cerrar todas las sesiones** cierra las demás.
+- **Fuerza bruta sin bloquear al dueño:** 5 intentos de ingreso cada 5 minutos por IP y email, y 30 por IP sumando todos los emails. Con Docker Desktop o `tailscale serve` todos llegan con la misma IP, así que un intruso podía dejar sin ingreso a todos: por eso cada navegador donde ya se entró bien recibe una cookie firmada de **dispositivo de confianza** (180 días) y tiene su propio límite, que los intentos de otros no agotan. Nginx aplica la misma idea a sus límites. El registro admite hasta 10 cuentas por hora y por IP.
 - **Ingreso con Google (OAuth 2.0 / OpenID Connect):**
   - Flujo de código con **PKCE**, `state` y `nonce` de un solo uso, guardados en una cookie firmada `HttpOnly` que vence a los 10 minutos.
   - El `id_token` se valida completo: firma RS256 con las claves de Google, emisor, destinatario, vencimiento, `nonce` y email verificado.
-  - Una cuenta existente se vincula sola solo si Google es la autoridad del email (Gmail o Workspace).
+  - Una cuenta existente nunca se vincula sola: se vincula desde Ajustes, con la sesión iniciada.
   - No hay redirecciones a direcciones externas y no se guarda ningún token de Google.
 - **Email:**
   - El código de verificación vence a los 15 minutos, se anula al quinto intento fallido y se guarda solo como HMAC.
@@ -443,7 +445,10 @@ Cada aviso se envía una sola vez; lo vencido se recuerda una vez por semana.
 - **Aislamiento entre usuarios:** cada consulta filtra por usuario; las pruebas automáticas recorren todas las rutas de la API verificando sesión, CSRF y acceso a datos ajenos.
 - **Archivos:** tipo validado por contenido, límite de 15 MB, nombres aleatorios; el XML se lee sin XXE y el OCR tiene límites de páginas, píxeles y tiempo.
 - **Cabeceras:** CSP estricta, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`. Con `ALLOWED_HOSTS` se bloquea el *DNS rebinding*.
-- **Contenedores:** `frontend`, `backend` y `worker` corren sin root, sin capacidades del kernel y con `no-new-privileges`. Solo se expone el puerto web; la base no es accesible desde fuera de Docker.
+- **Contenedores:** `frontend`, `backend` y `worker` corren sin root, sin capacidades del kernel y con `no-new-privileges`. Solo se expone el puerto web; la base no es accesible desde fuera de Docker y la app entra con un rol sin privilegios de superusuario.
+- **Dependencias:** imágenes base fijadas por *digest* y dependencias de Python con hashes; Dependabot (`.github/dependabot.yml`) propone cada semana las actualizaciones. Si no se usa GitHub, actualizar las imágenes a mano de vez en cuando.
+- **Compartir → Factura:** un archivo compartido pide confirmación antes de subirse (cualquier página web podría mandar uno).
+- **Respaldos:** solo los ve, en *Ajustes*, quien administra el servidor (la primera cuenta). El backend no arranca con la contraseña de ejemplo de `.env.example`.
 - **Datos sensibles fuera del repositorio:** `.env` y los respaldos están en `.gitignore`.
 
 ---
@@ -486,7 +491,7 @@ docker run -d --name factura-test-db -p 5433:5432 -e POSTGRES_USER=factura \
 
 # Backend
 cd backend
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt   # requirements.in + herramientas; la imagen usa el lock con hashes
 ruff check .                  # estilo
 pytest                        # pruebas automáticas (usan la base de pruebas en el puerto 5433)
 
@@ -513,8 +518,11 @@ factura/
 ├── docker-compose.yml        Servicios: db, backend, worker y frontend
 ├── .env.example              Plantilla de configuración (copiar como .env)
 ├── LICENSE                   Licencia MIT
+├── .github/dependabot.yml    Actualizaciones semanales de imágenes y dependencias
 ├── backup/
 │   └── backup.sh             Respaldo diario (corre dentro del contenedor db)
+├── db/
+│   └── roles.sh              Rol sin privilegios para la app (corre dentro del contenedor db)
 ├── backend/                  API · Python 3.12 · FastAPI · SQLAlchemy 2 · Alembic
 │   ├── Dockerfile
 │   ├── app/

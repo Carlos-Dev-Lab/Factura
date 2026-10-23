@@ -2,7 +2,8 @@ name: factura
 
 # Configuración compartida por la API y el worker.
 x-backend-env: &backend-env
-  DATABASE_URL: postgresql+psycopg://factura:${POSTGRES_PASSWORD}@db:5432/factura
+  # La app entra con su propio rol, sin privilegios de superusuario (lo crea db/roles.sh).
+  DATABASE_URL: postgresql+psycopg://factura_app:${POSTGRES_PASSWORD}@db:5432/factura
   SECRET_KEY: ${SECRET_KEY:?Definí SECRET_KEY en .env}
   ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
   COOKIE_SECURE: ${COOKIE_SECURE:-false}
@@ -29,15 +30,17 @@ x-hardening: &hardening
 
 services:
   # PostgreSQL y, en segundo plano, el respaldo diario (backup/backup.sh): copia la base y los
-  # archivos de las facturas a la carpeta ./backups del servidor, fuera de Docker.
+  # archivos de las facturas a la carpeta ./backups del servidor, fuera de Docker. Al arrancar,
+  # db/roles.sh prepara el rol sin privilegios con el que entra la app.
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36
     restart: unless-stopped
     init: true  # proceso inicial mínimo que atiende al respaldo en segundo plano
     entrypoint:
       - sh
       - -c
       - |
+        until sh /roles.sh; do echo "roles: falló, se reintenta" >&2; sleep 10; done &
         while true; do sh /backup.sh; echo "respaldo: el script se detuvo, se relanza" >&2; sleep 60; done &
         exec docker-entrypoint.sh postgres
     environment:
@@ -50,13 +53,16 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./backup/backup.sh:/backup.sh:ro
+      - ./db/roles.sh:/roles.sh:ro
       - ${BACKUP_DIR:-./backups}:/backups
       - uploads:/uploads:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U factura -d factura"]
+      # Lista recién cuando el rol de la app está preparado: antes, el backend no podría entrar.
+      test: ["CMD-SHELL", "pg_isready -U factura -d factura && test -f /tmp/roles-ok"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 60s
 
   backend:
     build: ./backend

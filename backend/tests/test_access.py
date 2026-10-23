@@ -345,3 +345,11 @@ def test_logout_everywhere_stops_notifications_on_every_device(client: TestClien
 
     with SessionLocal() as db:
         assert db.query(PushSubscription).count() == 0  # el celular perdido ya no recibe nada
+
+
+def test_only_the_server_admin_sees_the_backups(make_client, monkeypatch) -> None:
+    admin = make_client()
+    assert admin.get("/api/v1/system/backups").status_code == 200
+    monkeypatch.setattr(config.get_settings(), "allow_registration", True)
+    other = make_client("otra@example.com")
+    assert other.get("/api/v1/system/backups").status_code == 403

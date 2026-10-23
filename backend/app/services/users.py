@@ -1,4 +1,4 @@
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,11 @@ _REGISTER_LOCK_ID = 727_002
 
 def has_users(db: Session) -> bool:
     return db.scalar(select(User.id).limit(1)) is not None
+
+
+def is_admin(db: Session, user: User) -> bool:
+    """La primera cuenta creada administra el servidor (por ejemplo, ve los respaldos)."""
+    return db.scalar(select(func.min(User.id))) == user.id
 
 
 def registration_open(db: Session) -> bool:
@@ -74,24 +79,19 @@ def authenticate(db: Session, email: str, password: str) -> User:
 
 
 def google_login(db: Session, identity: GoogleIdentity) -> User:
-    """Cuenta para un ingreso con Google: la ya vinculada, una existente con el mismo email o una nueva.
+    """Cuenta para un ingreso con Google: la ya vinculada o una nueva.
 
-    ConflictError: hay una cuenta con ese email pero no se puede vincular sola (hay que hacerlo
-    desde Ajustes con la sesión iniciada). ForbiddenError: no hay cuenta y el registro está cerrado.
+    ConflictError: ya hay una cuenta con ese email. Nunca se vincula sola: el registro con
+    contraseña no comprueba el email, así que esa cuenta pudo crearla otra persona con la
+    dirección de la víctima (y conservaría su contraseña). Se vincula desde Ajustes, con la
+    sesión iniciada. ForbiddenError: no hay cuenta y el registro está cerrado.
     """
     user = db.scalar(select(User).where(User.google_sub == identity.sub))
     if user:
         user.google_email = identity.email  # la persona pudo cambiar el email de su cuenta de Google
         return user
-    existing = db.scalar(select(User).where(User.email == identity.email))
-    if existing:
-        # Solo si Google tiene autoridad sobre esa dirección (Gmail o Workspace) y la cuenta no
-        # tiene ya otra cuenta de Google: así nadie entra a una cuenta ajena con un email viejo.
-        if not identity.authoritative or existing.google_sub is not None:
-            raise ConflictError("Esa cuenta existe: entrá con tu contraseña y vinculá Google desde Ajustes")
-        existing.google_sub, existing.google_email = identity.sub, identity.email
-        db.flush()
-        return existing
+    if db.scalar(select(User.id).where(User.email == identity.email)):
+        raise ConflictError("Esa cuenta existe: entrá con tu contraseña y vinculá Google desde Ajustes")
     _lock_registrations(db)
     if not registration_open(db):
         raise ForbiddenError("El registro de nuevos usuarios está deshabilitado")

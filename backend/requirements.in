@@ -1,0 +1,30 @@
+# Dependencias directas de la aplicación, con versión fija. Al cambiar algo acá, regenerar el lock
+# con hashes (requirements.txt), que es lo que instala la imagen. Desde la carpeta backend:
+#   docker run --rm -v "$PWD:/w" -w /w python:3.12-slim sh -c "pip install -q pip-tools && pip-compile
+#     --generate-hashes --allow-unsafe --strip-extras --no-emit-index-url --output-file requirements.txt requirements.in"
+fastapi==0.157.0
+# Dependencia de FastAPI fijada explícitamente: las versiones < 1.3.1 tienen CVEs (Range, multipart, Host).
+starlette==1.9.0
+uvicorn[standard]==0.32.1
+pydantic==2.10.4
+pydantic-settings==2.7.0
+email-validator==2.2.0
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3
+alembic==1.14.0
+argon2-cffi==23.1.0
+PyJWT==2.15.1
+python-multipart==0.0.32
+pdfplumber==0.11.10
+pypdfium2==5.14.0
+pytesseract==0.3.13
+Pillow==13.0.0
+# Lectura del QR de la factura electrónica (KuDE). Trae su binario: no necesita paquetes del sistema.
+zxing-cpp==3.1.1
+# XML de la factura electrónica (SIFEN) sin riesgo de XXE ni "billion laughs".
+defusedxml==0.7.1
+# Extractos bancarios en Excel.
+openpyxl==3.1.5
+# Notificaciones push del navegador.
+pywebpush==2.5.0
+py-vapid==1.9.6

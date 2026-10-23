@@ -188,36 +188,31 @@ def test_google_does_not_create_accounts_when_registration_is_closed(client: Tes
     assert not any(c.startswith(f"{ACCESS_COOKIE}=") for c in set_cookies(r))
 
 
-def test_existing_gmail_account_is_recognized(make_client, google: Google) -> None:
-    make_client("ana@gmail.com")
-    client = local_client()
-    assert google.login(client).headers["location"] == "/?ingreso=google"
-    me = client.get("/api/v1/auth/me").json()
+def test_existing_account_is_never_linked_automatically(make_client, google: Google) -> None:
+    # Pre-secuestro de cuenta: el registro con contraseña no comprueba el email, así que alguien
+    # pudo crear "ana@gmail.com" antes que Ana. Si al entrar con Google se fusionara sola, Ana
+    # cargaría sus datos en una cuenta cuya contraseña conoce otra persona.
+    intruso = make_client("ana@gmail.com")
+    r = google.login(local_client())
+    assert r.headers["location"] == "/ingresar?google=vincular"
+    assert not any(c.startswith(f"{ACCESS_COOKIE}=") for c in set_cookies(r))
+    assert intruso.get("/api/v1/auth/me").json()["google_email"] is None
+    # Tampoco con Google Workspace (claim "hd"): da igual quién controla el dominio.
+    r = google.login(local_client(), email="ana@gmail.com", hd="gmail.com")
+    assert r.headers["location"] == "/ingresar?google=vincular"
+
+
+def test_owner_links_google_from_settings_then_signs_in_with_it(google: Google) -> None:
+    client = local_user("ana@gmail.com")
+    assert google.link(client).headers["location"] == "/ajustes?seccion=seguridad&google=vinculado"
+    again = local_client()
+    assert google.login(again).headers["location"] == "/?ingreso=google"
+    me = again.get("/api/v1/auth/me").json()
     assert me["email"] == "ana@gmail.com" and me["has_password"] is True and me["google_email"] == "ana@gmail.com"
     # La próxima vez se la reconoce por el identificador de Google, aunque cambie el email.
-    again = local_client()
-    assert google.login(again, email="ana.nueva@gmail.com").headers["location"] == "/?ingreso=google"
-    assert again.get("/api/v1/auth/me").json()["id"] == me["id"]
-
-
-def test_other_email_providers_are_not_linked_automatically(make_client, google: Google) -> None:
-    # Google verificó carlo@example.com cuando se creó la cuenta de Google, pero ese dominio no es
-    # suyo: la dirección hoy podría ser de otra persona. Hay que vincular desde Ajustes.
-    make_client("carlo@example.com")
-    r = google.login(local_client(), email="carlo@example.com")
-    assert r.headers["location"] == "/ingresar?google=vincular"
-    # Con Google Workspace (claim "hd" del mismo dominio), Google sí es la autoridad del email.
-    assert (
-        google.login(local_client(), email="carlo@example.com", hd="example.com").headers["location"]
-        == "/?ingreso=google"
-    )
-    # Otro "hd" no cuenta.
-    assert (
-        google_auth.verify_id_token(
-            make_token("n", email="x@example.com", hd="otro.com"), "n", _FakeJWKS()
-        ).authoritative
-        is False
-    )
+    third = local_client()
+    assert google.login(third, email="ana.nueva@gmail.com").headers["location"] == "/?ingreso=google"
+    assert third.get("/api/v1/auth/me").json()["id"] == me["id"]
 
 
 def test_unverified_google_email_is_rejected(google: Google) -> None:
@@ -301,6 +296,19 @@ def test_repeated_bad_returns_are_blocked(google: Google) -> None:
     assert r.headers["location"] == "/ingresar?google=demasiados"
 
 
+def test_others_bad_returns_do_not_block_google_on_a_trusted_device(google: Google) -> None:
+    # Con Docker Desktop o `tailscale serve` todos llegan con la misma IP.
+    shared_ip = {"X-Real-IP": "10.213.47.1"}
+    owner = TestClient(app, base_url=LOCAL, headers=shared_ip)
+    assert google.login(owner).headers["location"] == "/?ingreso=google"  # ahora es de confianza
+    intruder = TestClient(app, base_url=LOCAL, headers=shared_ip)
+    for _ in range(5):
+        intruder.get("/api/v1/auth/google/start", follow_redirects=False)
+        intruder.get(CALLBACK, params={"code": "c", "state": "malo"}, follow_redirects=False)
+    assert google.login(intruder).headers["location"] == "/ingresar?google=demasiados"
+    assert google.login(owner).headers["location"] == "/?ingreso=google"
+
+
 def test_state_cookie_is_not_a_session(google: Google) -> None:
     client = local_client()
     client.get("/api/v1/auth/google/start", follow_redirects=False)
@@ -357,14 +365,7 @@ def test_forged_signatures_are_rejected(google: Google) -> None:
 
 def test_valid_id_token_gives_the_identity(google: Google) -> None:
     identity = google_auth.verify_id_token(make_token("n", email="Ana@Gmail.com"), "n", _FakeJWKS())
-    assert (identity.sub, identity.email, identity.name, identity.authoritative) == (
-        "109876543210",
-        "ana@gmail.com",
-        "Ana",
-        True,
-    )
-    other = google_auth.verify_id_token(make_token("n", email="ana@example.com"), "n", _FakeJWKS())
-    assert other.authoritative is False
+    assert (identity.sub, identity.email, identity.name) == ("109876543210", "ana@gmail.com", "Ana")
 
 
 # ---------- Vincular y desvincular desde Ajustes ----------

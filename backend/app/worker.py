@@ -13,7 +13,7 @@ from sqlalchemy import delete, select, text
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal, engine
-from app.models import LoginAttempt, User
+from app.models import LoginAttempt, RevokedSession, User
 from app.services import invoices, notify, trash
 from app.services.storage import LocalStorage
 
@@ -61,6 +61,8 @@ def run_maintenance() -> None:
         purged = trash.purge_expired(db, storage)
         orphans = sum(invoices.purge_orphan_uploads(db, u, storage) for u in db.scalars(select(User)))
         db.execute(delete(LoginAttempt).where(LoginAttempt.created_at < datetime.now(UTC) - timedelta(days=1)))
+        # Una sesión revocada ya vencida no puede volver a usarse: no hace falta recordarla.
+        db.execute(delete(RevokedSession).where(RevokedSession.expires_at < datetime.now(UTC)))
         notify.prune_log(db, date.today() - timedelta(days=120))
         db.commit()
     logger.info("Mantenimiento: %s de la papelera, %s archivos abandonados", purged, orphans)

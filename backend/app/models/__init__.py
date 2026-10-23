@@ -5,7 +5,14 @@ from app.models.category import Category, CategoryKind
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.login_attempt import LoginAttempt
 from app.models.scheduled_payment import ScheduledPayment
-from app.models.support import CategoryRule, NotificationLog, PushSubscription, ServerKey, TrashItem
+from app.models.support import (
+    CategoryRule,
+    NotificationLog,
+    PushSubscription,
+    RevokedSession,
+    ServerKey,
+    TrashItem,
+)
 from app.models.transaction import PaymentMethod, Transaction, TransactionKind
 from app.models.user import User
 
@@ -21,6 +28,7 @@ __all__ = [
     "NotificationLog",
     "PaymentMethod",
     "PushSubscription",
+    "RevokedSession",
     "ScheduledPayment",
     "ServerKey",
     "Transaction",

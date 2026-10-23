@@ -11,6 +11,7 @@ import {
 
 import { invoicesApi } from '../api/endpoints';
 import type { DueItem } from '../api/types';
+import { Modal } from '../components/Modal';
 import { AccountDialog, type AccountDialogState } from '../features/accounts/AccountDialog';
 import { TransferDialog, type TransferDraft } from '../features/accounts/TransferDialog';
 import { PayDialog } from '../features/dues/PayDialog';
@@ -42,6 +43,7 @@ type Active =
   | { type: 'transfer'; draft: TransferDraft }
   | { type: 'account'; state: AccountDialogState }
   | { type: 'analyzing'; previewUrl?: string; name: string }
+  | { type: 'shared'; file: File }
   | null;
 
 const DialogsContext = createContext<Dialogs | null>(null);
@@ -79,10 +81,12 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
     [toast, close],
   );
 
-  // Archivo compartido desde otra app (WhatsApp, correo...) con "Compartir → Factura".
+  // Archivo compartido desde otra app (WhatsApp, correo...) con "Compartir → Factura". Se pregunta
+  // antes de subirlo: cualquier página web puede mandar un archivo a /share-target y, sin esta
+  // pregunta, se subía y analizaba solo con tu sesión.
   useEffect(() => {
-    void takeSharedFile().then((file) => file && analyzeInvoice(file));
-  }, [analyzeInvoice]);
+    void takeSharedFile().then((file) => file && setActive({ type: 'shared', file }));
+  }, []);
 
   const value = useMemo<Dialogs>(
     () => ({
@@ -123,6 +127,28 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
       {active?.type === 'pay' && <PayDialog due={active.due} onClose={close} />}
       {active?.type === 'transfer' && <TransferDialog draft={active.draft} onClose={close} />}
       {active?.type === 'account' && <AccountDialog state={active.state} onClose={close} />}
+      {active?.type === 'shared' && (
+        <Modal
+          title="Archivo compartido"
+          onClose={close}
+          onSubmit={() => void analyzeInvoice(active.file)}
+          footer={
+            <>
+              <button type="button" className="btn" onClick={close}>
+                Descartar
+              </button>
+              <button className="btn mint" data-autofocus>
+                Analizar factura
+              </button>
+            </>
+          }
+        >
+          <p>
+            Recibiste <strong>{active.file.name}</strong>. ¿Querés analizarlo como factura?
+          </p>
+          <p className="muted">Si no lo compartiste vos desde otra app, descartalo.</p>
+        </Modal>
+      )}
       {active?.type === 'analyzing' && (
         <div className="analyzing" role="alert" aria-busy="true">
           <div className="modal-card">

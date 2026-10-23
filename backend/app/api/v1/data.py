@@ -9,7 +9,7 @@ from pydantic import ValidationError as PydanticValidationError
 from starlette.background import BackgroundTask
 
 from app.api.deps import DB, CurrentUser, PathId, Storage, verify_csrf
-from app.core.errors import ValidationError
+from app.core.errors import ForbiddenError, ValidationError
 from app.models import TrashItem
 from app.schemas.support import (
     BackupOut,
@@ -20,7 +20,7 @@ from app.schemas.support import (
     RestoredOut,
     TrashOut,
 )
-from app.services import export, imports, trash
+from app.services import export, imports, trash, users
 
 router = APIRouter(tags=["datos"], dependencies=[Depends(verify_csrf)])
 
@@ -83,6 +83,11 @@ def full_export(user: CurrentUser, db: DB, storage: Storage) -> FileResponse:
 
 
 @router.get("/system/backups", response_model=list[BackupOut])
-def list_backups(user: CurrentUser) -> list[dict]:
-    """Respaldos automáticos del servidor (solo nombre, tamaño y fecha; no se descargan desde la web)."""
+def list_backups(user: CurrentUser, db: DB) -> list[dict]:
+    """Respaldos automáticos del servidor (solo nombre, tamaño y fecha; no se descargan desde la web).
+
+    Son de todo el servidor, no de una cuenta: solo los ve quien lo administra.
+    """
+    if not users.is_admin(db, user):
+        raise ForbiddenError("Solo quien administra el servidor ve los respaldos")
     return export.list_backups()

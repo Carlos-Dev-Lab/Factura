@@ -1,5 +1,7 @@
 # 1) Compilación de la app React
-FROM node:22-alpine AS build
+# Imágenes fijadas por digest: un rebuild usa exactamente la misma base. Dependabot propone las
+# actualizaciones (.github/dependabot.yml).
+FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -7,7 +9,8 @@ COPY . .
 RUN npm run build
 
 # 2) Servidor web sin privilegios de root
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+# Rama estable de nginx (la 1.27 dejó de recibir parches y su Alpine quedó congelado).
+FROM nginxinc/nginx-unprivileged:1.30-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
 COPY security-headers.conf api-proxy.conf /etc/nginx/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html

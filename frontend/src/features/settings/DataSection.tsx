@@ -13,8 +13,10 @@ function size(bytes: number): string {
 }
 
 function BackupsCard() {
-  const { data: backups } = useBackups();
+  const { data: backups, isError } = useBackups();
   const latest = backups?.[0];
+  // Los respaldos son de todo el servidor: solo los ve quien lo administra (la primera cuenta).
+  if (isError) return null;
   const hoursAgo = latest ? (Date.now() - new Date(latest.created_at).getTime()) / 3_600_000 : null;
   const stale = hoursAgo !== null && hoursAgo > 36;
 

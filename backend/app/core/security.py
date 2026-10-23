@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -15,6 +16,10 @@ ALGORITHM = "HS256"
 ACCESS_COOKIE = "factura_session"
 CSRF_COOKIE = "factura_csrf"
 CSRF_HEADER = "X-CSRF-Token"
+# Dispositivo donde ya se entró bien alguna vez. Los intentos fallidos de otros no lo bloquean.
+DEVICE_COOKIE = "factura_device"
+DEVICE_AUDIENCE = "trusted-device"
+DEVICE_DAYS = 180
 
 _hasher = PasswordHasher()
 
@@ -30,29 +35,44 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+@dataclass(frozen=True)
+class SessionToken:
+    user_id: int
+    version: int
+    # Identificador único de esta sesión: al cerrarla se anota como revocado.
+    jti: str
+    expires_at: datetime
+
+
 def create_access_token(user_id: int, session_version: int) -> str:
     settings = get_settings()
     now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
         "ver": session_version,
+        "jti": secrets.token_urlsafe(16),
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_minutes),
     }
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
 
-def decode_access_token(token: str) -> tuple[int, int] | None:
-    """Devuelve (user_id, session_version) o None si el token no es válido."""
+def decode_access_token(token: str) -> SessionToken | None:
+    """La sesión del token, o None si el token no es válido."""
     try:
         payload = jwt.decode(
             token,
             get_settings().secret_key,
             algorithms=[ALGORITHM],
-            # Un token sin vencimiento nunca debe aceptarse, aunque esté bien firmado.
-            options={"require": ["exp", "iat", "sub", "ver"]},
+            # Un token sin vencimiento (o sin identificador para poder revocarlo) nunca se acepta.
+            options={"require": ["exp", "iat", "sub", "ver", "jti"]},
         )
-        return int(payload["sub"]), int(payload["ver"])
+        jti = payload["jti"]
+        if not isinstance(jti, str) or not 16 <= len(jti) <= 64:
+            return None
+        return SessionToken(
+            int(payload["sub"]), int(payload["ver"]), jti, datetime.fromtimestamp(int(payload["exp"]), UTC)
+        )
     except (jwt.PyJWTError, KeyError, ValueError, TypeError):
         return None
 
@@ -79,6 +99,28 @@ def decode_signed(token: str, audience: str) -> dict[str, object] | None:
         )
     except jwt.PyJWTError:
         return None
+
+
+def create_device_token(email: str, session_version: int) -> str:
+    """Marca este navegador como uno donde `email` ya entró bien (técnica "device cookie" de OWASP).
+
+    Lleva la versión de sesión: cerrar todas las sesiones o cambiar la contraseña también le
+    quita la confianza a los demás dispositivos.
+    """
+    claims = {"did": secrets.token_urlsafe(16), "email": email.lower(), "sv": session_version}
+    return create_signed(claims, DEVICE_AUDIENCE, DEVICE_DAYS * 24 * 60)
+
+
+def device_id(token: str, email: str | None = None, session_version: int | None = None) -> str | None:
+    """Id del dispositivo si el token es válido y, si se indican, de ese email y esa versión de sesión."""
+    data = decode_signed(token, DEVICE_AUDIENCE) if token else None
+    if not data or not isinstance(data.get("did"), str) or not isinstance(data.get("email"), str):
+        return None
+    if email is not None and data["email"] != email.lower():
+        return None
+    if session_version is not None and data.get("sv") != session_version:
+        return None
+    return str(data["did"])[:64]
 
 
 def keyed_hash(purpose: str, value: str) -> str:

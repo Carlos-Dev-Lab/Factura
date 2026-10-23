@@ -1,0 +1,38 @@
+# Las imágenes base están fijadas por digest y las dependencias de Python por hash: así un rebuild
+# no cambia nada sin que nadie lo note. A cambio, hay que actualizarlas a propósito. Dependabot abre
+# cada semana un pull request con las versiones nuevas (parches de seguridad incluidos).
+# cooldown: una versión recién publicada se propone recién a los 7 días; si fue un paquete
+# comprometido, para entonces normalmente ya se detectó y se retiró.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories: ["/backend", "/frontend"]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: docker-compose
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  # requirements.in -> requirements.txt (pip-compile con hashes): Dependabot regenera el lock.
+  - package-ecosystem: pip
+    directory: "/backend"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      python:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: "/frontend"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        patterns: ["*"]

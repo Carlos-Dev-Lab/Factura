@@ -65,6 +65,16 @@ class TrashItem(OwnedMixin, Base):
     deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class RevokedSession(Base):
+    """Sesión cerrada antes de vencer: su token deja de valer aunque alguien lo haya copiado."""
+
+    __tablename__ = "revoked_sessions"
+
+    jti: Mapped[str] = mapped_column(String(64), primary_key=True)
+    # Pasada esta fecha el token vence solo y la fila se puede borrar.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class ServerKey(Base):
     """Valores internos del servidor (claves VAPID, posición de lectura de Telegram)."""
 

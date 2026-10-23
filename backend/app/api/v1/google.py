@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 
-from app.api.deps import DB, CurrentUser, LoginLimiter, client_ip, verify_csrf
+from app.api.deps import DB, CurrentUser, LoginLimiter, client_ip, trusted_device, verify_csrf
 from app.api.v1.auth import start_session
 from app.core.config import get_settings
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
@@ -114,7 +114,10 @@ def callback(
 ) -> RedirectResponse:
     data = decode_signed(request.cookies.get(STATE_COOKIE, ""), STATE_AUDIENCE)
     mode = data.get("mode") if data else "login"
-    key = f"google:{client_ip(request)}"
+    # Igual que en el ingreso con contraseña: un dispositivo de confianza no comparte la cuenta de
+    # intentos con los demás que llegan con la misma IP.
+    device = trusted_device(request)
+    key = f"google:device:{device}" if device else f"google:{client_ip(request)}"
     if limiter.is_blocked(key):
         return _failed(mode, "demasiados")
     if data is None:

@@ -5,6 +5,8 @@ from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 
 class Settings(BaseSettings):
@@ -22,6 +24,8 @@ class Settings(BaseSettings):
     allow_registration: bool = False
     login_max_attempts: int = 5
     login_window_seconds: int = 300
+    # Ingresos fallidos desde dispositivos nuevos por IP, sumando todos los emails.
+    login_ip_max_attempts: int = 30
 
     storage_dir: Path = Path("/data/uploads")
     max_upload_mb: int = 15
@@ -70,6 +74,18 @@ class Settings(BaseSettings):
     def _reject_placeholder(cls, v: str) -> str:
         if v.lower().startswith("cambiar"):
             raise ValueError("SECRET_KEY no fue configurada: generá una clave aleatoria")
+        return v
+
+    @field_validator("database_url")
+    @classmethod
+    def _reject_placeholder_db_password(cls, v: str) -> str:
+        # La contraseña de ejemplo de .env.example es pública (está en GitHub).
+        try:
+            password = make_url(v).password or ""
+        except ArgumentError:
+            return v  # una URL mal escrita la rechaza después la conexión, con su propio mensaje
+        if password.lower().startswith("cambiar"):
+            raise ValueError("POSTGRES_PASSWORD no fue configurada: generá una contraseña aleatoria")
         return v
 
     @property

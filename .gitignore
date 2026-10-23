@@ -22,6 +22,8 @@ secrets/
 client_secret*.json
 credentials*.json
 service-account*.json
+# Informes de auditoría de seguridad: describen vulnerabilidades abiertas.
+SECURITY-AUDIT-*.md
 
 # ==========================================================================
 # Datos reales: respaldos, archivos subidos y exportaciones

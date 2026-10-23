@@ -24,8 +24,6 @@ TOKEN_URL = "https://oauth2.googleapis.com/token"
 CERTS_URL = "https://www.googleapis.com/oauth2/v3/certs"
 ISSUERS = ("https://accounts.google.com", "accounts.google.com")
 SCOPES = "openid email profile"
-# Direcciones que Google controla siempre: si dice que están verificadas, lo están hoy.
-GOOGLE_MAIL_DOMAINS = ("gmail.com", "googlemail.com")
 CLOCK_SKEW_SECONDS = 60
 
 
@@ -38,10 +36,6 @@ class GoogleIdentity:
     sub: str
     email: str
     name: str
-    # Google tiene autoridad sobre ese email (Gmail o Google Workspace): sirve para reconocer
-    # una cuenta existente por su email. Con otras direcciones, Google solo las verificó al
-    # crear la cuenta de Google y hoy podrían ser de otra persona.
-    authoritative: bool
 
 
 @dataclass(frozen=True)
@@ -181,7 +175,5 @@ def verify_id_token(token: str, nonce: str, jwks: jwt.PyJWKClient | None = None)
     email = str(claims.get("email", "")).strip().lower()
     if not sub or len(sub) > 255 or "@" not in email or len(email) > 254:
         raise GoogleAuthError("Datos de la cuenta de Google incompletos")
-    domain = email.rsplit("@", 1)[1]
-    authoritative = domain in GOOGLE_MAIL_DOMAINS or claims.get("hd") == domain
     name = str(claims.get("name") or claims.get("given_name") or "").strip()[:80]
-    return GoogleIdentity(sub=sub, email=email, name=name, authoritative=authoritative)
+    return GoogleIdentity(sub=sub, email=email, name=name)
