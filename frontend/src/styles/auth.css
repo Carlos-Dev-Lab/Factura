@@ -1,0 +1,111 @@
+/* ===== Ingreso y registro =====
+   Mismo lenguaje visual que la portada (styles/landing.css): fondo con brillos, tarjeta con
+   relieve, acentos menta y violeta. Clases con prefijo au-. */
+
+.au {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(1000px 560px at 88% -10%, rgba(139, 123, 255, 0.18), transparent 62%),
+    radial-gradient(820px 520px at -8% 30%, rgba(62, 230, 176, 0.12), transparent 60%),
+    var(--bg);
+}
+.au-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 16px clamp(16px, 4vw, 48px);
+}
+.au-brand { border: 0; background: none; padding: 0; cursor: pointer; }
+.au-brand:disabled { cursor: default; }
+.au-brand .logo { width: 40px; height: 40px; border-radius: 13px; }
+.au-about { gap: 6px; white-space: nowrap; }
+.au-about-short { display: none; }
+
+.au-main {
+  flex: 1; width: 100%; max-width: 1120px; margin: 0 auto;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 460px); gap: clamp(32px, 6vw, 88px);
+  align-items: center; padding: clamp(16px, 4vw, 40px) clamp(16px, 4vw, 48px) 56px;
+}
+
+/* Columna de la izquierda: el porqué */
+.au-side { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; animation: lp-up 0.6s both; }
+.au-side h2 { font-size: clamp(32px, 4.2vw, 50px); line-height: 1.06; letter-spacing: -0.035em; }
+.au-side .lp-checks { margin-top: 4px; }
+.au-note {
+  display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 14px 16px; border-radius: 18px;
+  background: #1d2748; box-shadow: 0 8px 0 var(--edge), 0 24px 44px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: lp-float 6s ease-in-out 1s infinite;
+}
+.au-note > span:last-child { display: flex; flex-direction: column; }
+.au-note b { font-size: 14px; }
+.au-note small { color: var(--muted); font-size: 12.5px; }
+
+/* Tarjeta del formulario */
+.au-card {
+  display: flex; flex-direction: column; gap: 16px; padding: clamp(22px, 3vw, 32px); border-radius: 30px;
+  background: var(--card);
+  box-shadow: 0 12px 0 var(--edge), 0 40px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: lp-up 0.6s 0.1s both;
+}
+.au-head h1 { font-size: clamp(26px, 3vw, 30px); margin-bottom: 6px; }
+.au-field { font-size: 13px; color: var(--soft); }
+.au-input { position: relative; display: flex; align-items: center; }
+.au-input > svg { position: absolute; left: 14px; color: var(--muted); pointer-events: none; transition: color 0.15s; }
+.au-field .au-input input { min-height: 52px; padding: 0 16px 0 44px; font-size: 15px; border-radius: 14px; }
+.au-field .au-input:has(.au-eye) input { padding-right: 52px; }
+.au-field .au-input:focus-within > svg { color: var(--mint); }
+.au-field .au-input input::placeholder { color: #66708f; font-weight: 500; }
+.au-field.invalid .au-input input { box-shadow: var(--inset), 0 0 0 2px rgba(255, 138, 91, 0.75); }
+.au-field.invalid .au-input > svg { color: var(--coral-text); }
+.au-err { color: var(--coral-text); font-size: 12.5px; font-weight: 600; line-height: 1.4; }
+.au-eye {
+  position: absolute; right: 6px; width: 40px; height: 40px; border: 0; border-radius: 11px; cursor: pointer;
+  background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center;
+}
+.au-eye:hover { background: #1b2440; color: var(--text); }
+
+/* Requisitos de la contraseña */
+.au-rules { display: flex; flex-direction: column; gap: 10px; margin-top: -4px; padding: 12px 14px; border-radius: 14px; background: var(--well); box-shadow: var(--inset); }
+.au-rules .strength { margin-top: 0; flex-wrap: wrap; row-gap: 6px; }
+.au-rules ul { display: flex; flex-direction: column; gap: 6px; }
+.au-rules li { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.au-rules li svg { color: #59628a; flex: none; }
+.au-rules li.ok { color: var(--soft); }
+.au-rules li.ok svg { color: var(--mint); }
+
+.au-alert {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 14px;
+  background: rgba(255, 138, 91, 0.12); color: var(--coral-text); font-size: 13.5px; font-weight: 600; line-height: 1.45;
+}
+.au-alert svg { flex: none; margin-top: 1px; }
+.au-switch { text-align: center; color: var(--muted); font-size: 14px; }
+.au-switch button { min-height: 44px; border: 0; background: none; padding: 0 6px; color: var(--mint); font-weight: 700; cursor: pointer; }
+.au-switch button:hover { text-decoration: underline; }
+.au-fine { text-align: center; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+
+/* Celular y tablet: arriba del formulario queda una versión corta del mensaje (etiqueta y título
+   con el mismo degradé que en computadora), sin la lista ni el aviso de ejemplo. */
+@media (max-width: 900px) {
+  .au-main { grid-template-columns: minmax(0, 1fr); max-width: 520px; gap: 22px; align-content: start; padding-top: clamp(4px, 3vh, 28px); }
+  .au-side { align-items: center; text-align: center; gap: 12px; }
+  .au-side h2 { font-size: clamp(26px, 7.4vw, 36px); }
+  .au-side .lp-lead, .au-side .lp-checks, .au-side .au-note { display: none; }
+}
+@media (max-width: 420px) {
+  .au-about { padding: 0 12px; }
+  .au-card { border-radius: 24px; }
+}
+@media (max-width: 380px) {
+  .au-about-long { display: none; }
+  .au-about-short { display: inline; }
+}
+
+/* Botón de Google: colores del tema oscuro de sus pautas de marca (fondo #131314, borde #8E918F). */
+.au-google {
+  min-height: 52px; border-radius: 14px; gap: 12px; font-size: 15px; font-weight: 600;
+  background: #131314; color: #e3e3e3; box-shadow: inset 0 0 0 1px #8e918f, 0 5px 0 var(--edge);
+}
+.au-google:hover { background: #1c1c1e; }
+.au-google:active { box-shadow: inset 0 0 0 1px #8e918f, 0 1px 0 var(--edge); }
+.au-or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.au-or::before, .au-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }

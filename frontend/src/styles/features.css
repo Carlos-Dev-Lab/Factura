@@ -1,0 +1,197 @@
+/* ===== Funciones nuevas: cuentas, avisos, reportes, importación, papelera ===== */
+:root {
+  /* Pasos de menta y coral validados para gráficos sobre la superficie oscura (contraste y daltonismo). */
+  --chart-income: #19a97a;
+  --chart-expense: #e36b3b;
+  --chart-grid: #222b48;
+}
+.spaced { margin-top: 14px; }
+.hint.neg, .hint .neg { color: var(--coral-text); }
+.mono { font-family: ui-monospace, 'Cascadia Code', Menlo, monospace; letter-spacing: 0.02em; word-break: break-all; }
+.grid.three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); align-items: stretch; }
+.grid.kpis-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+.fgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.stack.tight { gap: 10px; }
+.found.bad { background: rgba(255, 138, 91, 0.14); color: var(--coral-text); }
+.found > span { flex: 1; }
+
+/* Aviso con acción ("Deshacer") */
+.toast { display: flex; align-items: center; gap: 14px; }
+.toast.show.has-action { pointer-events: auto; }
+.toast-action { border: 0; background: transparent; color: var(--mint); font-weight: 800; font-size: 14px; cursor: pointer; padding: 6px 8px; border-radius: 8px; white-space: nowrap; }
+.toast-action:hover { background: rgba(62, 230, 176, 0.12); }
+
+/* Interruptor con texto */
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border-radius: 16px; background: var(--well); box-shadow: var(--inset); }
+.switch-row > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.switch-row b { font-size: 14px; }
+.card .switch-row + .fgrid, .card .switch-row + .switch-row { margin-top: 12px; }
+.seg.wide.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* Pago y factura */
+.pay-amount { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 16px; background: var(--well); box-shadow: var(--inset); }
+details.fiscal { border-radius: 16px; background: var(--well); box-shadow: var(--inset); padding: 4px 14px; }
+details.fiscal summary { cursor: pointer; min-height: 42px; display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; }
+.fiscal-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 12px; }
+
+/* Panel: proyección, presupuestos, cuentas */
+.projection { display: flex; flex-direction: column; gap: 14px; }
+.big-figure { font-size: clamp(30px, 4vw, 40px); font-variant-numeric: normal; }
+.breakdown { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.breakdown > div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.breakdown dt { color: var(--muted); }
+.breakdown dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.breakdown.compact > div { font-size: 13px; }
+.allowance { margin-top: auto; padding: 12px 14px; border-radius: 14px; background: rgba(62, 230, 176, 0.1); color: var(--soft); font-size: 14px; line-height: 1.5; }
+.allowance b { color: var(--text); }
+.allowance.bad { background: rgba(255, 138, 91, 0.12); }
+.budget-list { display: flex; flex-direction: column; gap: 14px; }
+.budget-list li { display: flex; flex-direction: column; gap: 6px; }
+.budget-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; min-width: 0; }
+.budget-name i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.meter.thin { height: 8px; }
+.account-mini { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.account-mini li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; font-size: 14px; }
+.account-mini i { width: 10px; height: 10px; border-radius: 3px; }
+.account-mini .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.account-mini b { font-variant-numeric: tabular-nums; }
+.mini-stats.three { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); flex: 1 1 420px; }
+
+/* Avisos */
+.bell-wrap { position: relative; }
+.icon-btn.bell { width: 44px; height: 44px; position: relative; }
+.icon-btn.bell.has { color: var(--amber); }
+.bell .badge { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--coral); color: var(--bg); font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 3px var(--bg); }
+.popover { position: absolute; right: 0; top: calc(100% + 10px); z-index: 30; width: min(380px, calc(100vw - 32px)); max-height: min(70vh, 520px); overflow-y: auto; padding: 14px; border-radius: 20px; background: #182040; box-shadow: 0 10px 0 var(--edge), 0 24px 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08); display: flex; flex-direction: column; gap: 12px; }
+.popover-head { display: flex; justify-content: space-between; align-items: center; }
+.alert-list { display: flex; flex-direction: column; gap: 8px; }
+.alert-item { width: 100%; display: flex; align-items: center; gap: 12px; padding: 11px 12px; border: 0; border-radius: 14px; background: var(--card2); box-shadow: var(--lift-sm); text-align: left; cursor: pointer; color: var(--text); }
+.alert-item:hover { background: #1f2846; }
+.alert-item .dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--violet); }
+.alert-item.warn .dot { background: var(--amber); }
+.alert-item.danger .dot { background: var(--coral); box-shadow: 0 0 10px rgba(255, 138, 91, 0.7); }
+.alert-item .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.alert-item .body b { font-size: 14px; }
+.alert-item .body small { font-size: 12px; color: var(--muted); }
+
+/* Menús del celular */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 45; background: rgba(5, 8, 18, 0.66); backdrop-filter: blur(4px); display: flex; align-items: flex-end; justify-content: center; animation: fade 0.18s ease-out; }
+.sheet { width: min(560px, 100%); padding: 10px 16px calc(24px + env(safe-area-inset-bottom)); border-radius: 26px 26px 0 0; background: #182040; box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1); animation: rise 0.22s ease-out; }
+.sheet-handle { width: 44px; height: 5px; border-radius: 3px; background: #2e3a66; margin: 0 auto 14px; }
+.sheet-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.sheet-action { min-height: 86px; border: 0; border-radius: 18px; background: var(--card2); box-shadow: var(--lift-sm); color: var(--text); font-weight: 700; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; text-align: center; padding: 8px; }
+.sheet-action.coral svg { color: var(--coral-text); }
+.sheet-action.mint svg { color: var(--mint); }
+.sheet-action.violet svg { color: var(--violet-text); }
+.sheet-list { display: flex; flex-direction: column; gap: 6px; }
+.sheet-list button { display: flex; align-items: center; gap: 14px; min-height: 52px; padding: 0 16px; border: 0; border-radius: 14px; background: transparent; color: var(--text); font-weight: 600; font-size: 15px; cursor: pointer; text-align: left; }
+.sheet-list button:hover, .sheet-list button.on { background: #222d52; }
+.sheet-list button.on svg { color: var(--mint); }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise { from { transform: translateY(40px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+
+/* Las tablas anchas se desplazan dentro de su caja. Sin `position: relative`, los textos ocultos para
+   lectores de pantalla (.sr, posición absoluta) escapaban de la caja y ensanchaban la página en el celular. */
+.table-wrap { position: relative; }
+
+/* Tooltip de "Gastos diarios": oculto (display: none) no ocupa lugar. Con solo opacity: 0, el de
+   los últimos días sobresalía por la derecha y en el celular agrandaba la página entera. */
+.bars .tip { display: none; }
+.bars .col:hover .tip, .bars .col:focus-within .tip { display: block; }
+.bars .col:nth-child(-n + 4) .tip { left: 0; transform: none; }
+.bars .col:nth-last-child(-n + 4) .tip { left: auto; right: 0; transform: none; }
+
+/* Vencimientos */
+.day-panel .item { flex-wrap: wrap; }
+.day-panel .item .body { flex: 1 1 120px; }
+/* Si ningún campo toma el foco al abrir, el foco queda en el diálogo: sin el contorno del navegador. */
+dialog.modal:focus { outline: none; }
+.item.due-in .datebox b { color: var(--violet-text); }
+.ev.expected { background: rgba(179, 168, 255, 0.14); color: var(--violet-text); box-shadow: inset 0 0 0 1px rgba(179, 168, 255, 0.4); }
+
+/* Cuentas */
+.grid.accounts { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); align-items: start; }
+.account-card { display: flex; flex-direction: column; gap: 14px; }
+.account-card.archived { opacity: 0.6; }
+.account-head { display: flex; align-items: center; gap: 12px; }
+.account-head .ava { width: 44px; height: 44px; flex: none; border-radius: 13px; display: flex; align-items: center; justify-content: center; }
+.account-head .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.account-head .body b { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-status { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 16px; background: var(--well); box-shadow: var(--inset); }
+.card-status .btn { align-self: flex-start; }
+.add-card { border: 2px dashed #2a3560; background: transparent; box-shadow: none; color: var(--soft); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; min-height: 180px; }
+.add-card:hover { border-color: var(--mint); color: var(--text); }
+.archived-list summary { cursor: pointer; font-weight: 700; }
+.archived-list .grid { margin-top: 16px; }
+
+/* Reportes */
+.year-chart { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.chart-legend { display: flex; gap: 18px; font-size: 13px; color: var(--soft); }
+.chart-legend span { display: inline-flex; align-items: center; gap: 8px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.sw.income { background: var(--chart-income); }
+.sw.expense { background: var(--chart-expense); }
+.plot { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 8px; height: 260px; }
+.y-axis { display: flex; flex-direction: column; justify-content: space-between; font-size: 11px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; margin: -7px 0; }
+.plot-area { position: relative; border-bottom: 1px solid #2a3456; }
+.gridlines i { position: absolute; left: 0; right: 0; height: 1px; background: var(--chart-grid); }
+.groups { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.group { position: relative; border: 0; background: transparent; padding: 0 2px; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; border-radius: 10px 10px 0 0; }
+.group:hover, .group.on, .group:focus-visible { background: rgba(255, 255, 255, 0.04); }
+.pair { display: flex; align-items: flex-end; gap: 2px; height: 100%; width: 100%; justify-content: center; }
+.pair .col { display: block; width: min(16px, 42%); min-height: 2px; border-radius: 4px 4px 0 0; transition: height 0.5s; }
+.col.income { background: var(--chart-income); }
+.col.expense { background: var(--chart-expense); }
+.group .tip { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 5; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; background: #222d52; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5); font-size: 12px; white-space: nowrap; text-align: left; pointer-events: none; color: var(--text); }
+.group .tip span { display: inline-flex; align-items: center; gap: 6px; color: var(--soft); }
+.groups .group:nth-child(-n + 2) .tip { left: 0; transform: none; }
+.groups .group:nth-last-child(-n + 2) .tip { left: auto; right: 0; transform: none; }
+.x-axis { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); margin-left: 46px; font-size: 11px; color: var(--muted); text-align: center; }
+.cat-year { display: flex; flex-direction: column; gap: 16px; }
+.cat-year li { display: flex; flex-direction: column; gap: 6px; }
+.share { height: 8px; border-radius: 999px; background: #0e1630; overflow: hidden; }
+.share div { height: 100%; border-radius: 999px; }
+
+/* Gastos diarios e importación */
+.list-totals { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 12px; font-size: 13px; color: var(--muted); }
+.search.compact-select { flex: 0 1 220px; }
+.search.compact-select select { border: 0; outline: 0; background: transparent; color: var(--text); font-weight: 600; font-size: 14px; width: 100%; min-height: 40px; }
+.modal.wide { max-width: min(980px, calc(100vw - 24px)); }
+.import-columns { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 16px; background: var(--well); box-shadow: var(--inset); }
+.import-totals { display: flex; flex-direction: column; justify-content: center; gap: 4px; font-size: 14px; color: var(--muted); }
+.import-table { max-height: 46vh; overflow: auto; }
+.import-table table { min-width: 720px; }
+.import-table select { min-height: 36px; border: 0; border-radius: 10px; background: var(--well); color: var(--text); padding: 0 8px; max-width: 180px; }
+.import-table td { vertical-align: middle; }
+.import-table input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--mint); }
+tr.dim td { opacity: 0.55; }
+.tag.dup { margin-left: 8px; background: rgba(255, 194, 77, 0.16); color: var(--amber); }
+.tag.err { margin-left: 8px; background: rgba(255, 138, 91, 0.16); color: var(--coral-text); }
+.tag.fe { margin-left: 8px; background: rgba(139, 123, 255, 0.18); color: var(--violet-text); vertical-align: middle; }
+.tag.income-tag { background: rgba(62, 230, 176, 0.14); color: var(--mint); }
+
+/* Ajustes */
+.rule-group + .rule-group { margin-top: 22px; }
+.rule-group h3 { font-size: 16px; margin-bottom: 4px; }
+.rule-group .hint { margin-bottom: 10px; }
+.list.compact .item { padding: 8px 10px; }
+.budget-rows { display: flex; flex-direction: column; gap: 10px; }
+.budget-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 180px) minmax(0, 170px); align-items: center; gap: 12px; padding: 8px 10px; border-radius: 14px; background: var(--card2); }
+.budget-input .f { font-size: 0; gap: 0; }
+.budget-input .f input.big { font-size: 15px; min-height: 40px; }
+.budget-row small { text-align: right; }
+
+@media (max-width: 900px) {
+  .bottom button.on { background: #2a3560; color: var(--mint); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12); }
+}
+@media (max-width: 600px) {
+  .settings-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .fgrid.three { grid-template-columns: minmax(0, 1fr); }
+  .sheet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plot { height: 200px; grid-template-columns: 30px minmax(0, 1fr); }
+  .x-axis { margin-left: 38px; font-size: 10px; }
+  .budget-row { grid-template-columns: minmax(0, 1fr) minmax(0, 140px); }
+  .budget-row small { grid-column: 1 / -1; text-align: left; }
+  .top-actions { flex-wrap: nowrap; }
+  .top-actions .month-switch { flex: 1; width: auto; }
+}

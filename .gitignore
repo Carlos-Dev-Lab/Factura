@@ -1,0 +1,201 @@
+# ==========================================================================
+# Secretos y configuración local (NUNCA subir)
+# ==========================================================================
+# .env tiene POSTGRES_PASSWORD, SECRET_KEY, el token de Telegram, el secreto de
+# Google y la contraseña de correo. Solo se sube la plantilla .env.example.
+.env
+.env.*
+!.env.example
+*.local
+docker-compose.override.yml
+compose.override.yml
+
+# Certificados y claves (HTTPS, Tailscale, firmas, credenciales de Google)
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+certs/
+secrets/
+client_secret*.json
+credentials*.json
+service-account*.json
+
+# ==========================================================================
+# Datos reales: respaldos, archivos subidos y exportaciones
+# ==========================================================================
+# ./backups tiene copias completas de la base y de las facturas.
+backups/
+uploads/
+*.dump
+*.sql
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.db
+*.tgz
+*.tar.gz
+*.zip
+*.7z
+*.rar
+
+# Facturas, extractos, reportes y capturas de pantalla sueltos
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+*.bmp
+*.tif
+*.tiff
+*.heic
+*.heif
+*.xml
+*.csv
+*.xls
+*.xlsx
+*.ods
+*.mp4
+*.webm
+# Grabaciones del navegador: incluyen cookies de sesión.
+*.har
+# Los íconos de la app sí se suben.
+!frontend/public/**
+
+# ==========================================================================
+# Asistentes de IA (instrucciones, memoria, historial, configuración)
+# ==========================================================================
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.claudeignore
+claude_desktop_config.json
+.mcp.json
+.mcp/
+mcp.json
+AGENTS.md
+AGENTS.override.md
+AGENT.md
+.agent/
+.agents/
+.codex/
+.cursor/
+.cursorrules
+.cursorignore
+.cursorindexingignore
+.windsurf/
+.windsurfrules
+.codeium/
+.gemini/
+GEMINI.md
+.geminiignore
+.aiexclude
+.github/copilot-instructions.md
+.github/copilot/
+.github/prompts/
+.github/instructions/
+.github/chatmodes/
+.github/agents/
+.copilot/
+.aider*
+.continue/
+.continuerc.json
+.cline/
+.clinerules
+memory-bank/
+.roo*
+.kilocode/
+.kiro/
+.junie/
+.amazonq/
+.augment/
+.serena/
+.specstory/
+.trae/
+.qodo/
+.tabnine/
+.cody/
+.opencode/
+opencode.json
+.goose/
+.goosehints
+.openhands/
+.devin/
+.qwen/
+QWEN.md
+.crush/
+CRUSH.md
+WARP.md
+.ai/
+.prompts/
+.playwright-mcp/
+playwright-report/
+test-results/
+
+# ==========================================================================
+# Python (backend)
+# ==========================================================================
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+.hypothesis/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.venv/
+venv/
+*.egg-info/
+*.egg
+build/
+.ipynb_checkpoints/
+pip-log.txt
+
+# ==========================================================================
+# Node (frontend)
+# ==========================================================================
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+*.timestamp-*.mjs
+coverage/
+.eslintcache
+.npm/
+.pnpm-store/
+stats.html
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ==========================================================================
+# Logs, temporales y basura de editores / sistema
+# ==========================================================================
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+*.swp
+*~
+tmp/
+.vscode/
+.idea/
+.zed/
+*.code-workspace
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+*.lnk
+$RECYCLE.BIN/

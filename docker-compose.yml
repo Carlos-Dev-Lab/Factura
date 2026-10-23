@@ -1,0 +1,110 @@
+name: factura
+
+# Configuración compartida por la API y el worker.
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+psycopg://factura:${POSTGRES_PASSWORD}@db:5432/factura
+  SECRET_KEY: ${SECRET_KEY:?Definí SECRET_KEY en .env}
+  ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-720}
+  MAX_UPLOAD_MB: 15
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  PUBLIC_URL: ${PUBLIC_URL:-}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  TZ: ${TZ:-America/Asuncion}
+
+x-hardening: &hardening
+  # El proceso no puede ganar privilegios ni usar capacidades especiales del kernel.
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  # PostgreSQL y, en segundo plano, el respaldo diario (backup/backup.sh): copia la base y los
+  # archivos de las facturas a la carpeta ./backups del servidor, fuera de Docker.
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    init: true  # proceso inicial mínimo que atiende al respaldo en segundo plano
+    entrypoint:
+      - sh
+      - -c
+      - |
+        while true; do sh /backup.sh; echo "respaldo: el script se detuvo, se relanza" >&2; sleep 60; done &
+        exec docker-entrypoint.sh postgres
+    environment:
+      POSTGRES_DB: factura
+      POSTGRES_USER: factura
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definí POSTGRES_PASSWORD en .env}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      TZ: ${TZ:-America/Asuncion}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./backup/backup.sh:/backup.sh:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+      - uploads:/uploads:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U factura -d factura"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *backend-env
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    volumes:
+      - uploads:/data/uploads
+      - ${BACKUP_DIR:-./backups}:/backups:ro  # solo para mostrar en Ajustes cuándo fue el último respaldo
+    <<: *hardening
+
+  # Avisos (push y Telegram) y limpieza diaria (papelera, archivos abandonados).
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      backend:
+        condition: service_healthy  # el backend aplica las migraciones al arrancar
+    environment: *backend-env
+    volumes:
+      - uploads:/data/uploads
+    healthcheck:
+      disable: true
+    <<: *hardening
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    <<: *hardening
+
+volumes:
+  db_data:
+  uploads:
+
+# Red interna chica y fija (30 direcciones). Sin esto Docker elige sola una /16 de 172.16–172.31,
+# que puede tapar la red Wi-Fi o la VPN del servidor y cortarle el acceso a otros equipos.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${DOCKER_SUBNET:-10.213.47.0/27}

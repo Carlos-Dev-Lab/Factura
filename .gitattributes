@@ -1,0 +1,9 @@
+# Fines de línea siempre LF, también al clonar en Windows: backup/backup.sh y la
+# configuración de nginx se usan dentro de contenedores Linux y con CRLF fallan.
+* text=auto eol=lf
+
+# Binarios: sin conversión.
+*.png binary
+*.ico binary
+*.woff binary
+*.woff2 binary
