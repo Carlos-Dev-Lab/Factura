@@ -19,17 +19,17 @@ export const keys = {
   me: ['me'] as const,
   categories: ['categories'] as const,
   rules: ['rules'] as const,
-  summary: (month: string) => ['summary', month] as const,
-  calendar: (month: string) => ['calendar', month] as const,
+  summary: (month: string, categoryId?: number) => ['summary', month, categoryId] as const,
+  calendar: (month: string, categoryId?: number) => ['calendar', month, categoryId] as const,
   transactions: (f: TransactionFilters) => ['transactions', f] as const,
-  invoices: (status?: InvoiceFilter, q?: string) => ['invoices', status, q] as const,
+  invoices: (status?: InvoiceFilter, q?: string, categoryId?: number) => ['invoices', status, q, categoryId] as const,
   scheduled: ['scheduled'] as const,
   history: (id: number) => ['history', id] as const,
   accounts: ['accounts'] as const,
   transfers: (f: object) => ['transfers', f] as const,
   alerts: ['alerts'] as const,
-  year: (year: number) => ['year', year] as const,
-  fiscal: (month: string) => ['fiscal', month] as const,
+  year: (year: number, categoryId?: number) => ['year', year, categoryId] as const,
+  fiscal: (month: string, categoryId?: number) => ['fiscal', month, categoryId] as const,
   trash: ['trash'] as const,
   notifications: ['notifications'] as const,
   backups: ['backups'] as const,
@@ -47,6 +47,7 @@ const FINANCIAL_KEYS = [
   'transfers',
   'alerts',
   'year',
+  'yearly-expenses',
   'fiscal',
   'trash',
 ];
@@ -69,17 +70,20 @@ export const useCategories = () =>
 
 export const useRules = () => useQuery({ queryKey: keys.rules, queryFn: categoriesApi.rules });
 
-export const useSummary = (month: string) =>
-  useQuery({ queryKey: keys.summary(month), queryFn: () => reportsApi.summary(month) });
+export const useSummary = (month: string, categoryId?: number) =>
+  useQuery({ queryKey: keys.summary(month, categoryId), queryFn: () => reportsApi.summary(month, categoryId) });
 
-export const useCalendar = (month: string) =>
-  useQuery({ queryKey: keys.calendar(month), queryFn: () => reportsApi.calendar(month) });
+export const useYearlyExpenses = (categoryId?: number) =>
+  useQuery({ queryKey: ['yearly-expenses', categoryId], queryFn: () => reportsApi.yearlyExpenses(categoryId) });
+
+export const useCalendar = (month: string, categoryId?: number) =>
+  useQuery({ queryKey: keys.calendar(month, categoryId), queryFn: () => reportsApi.calendar(month, categoryId) });
 
 export const useTransactions = (filters: TransactionFilters) =>
   useQuery({ queryKey: keys.transactions(filters), queryFn: () => transactionsApi.list(filters) });
 
-export const useInvoices = (status?: InvoiceFilter, q?: string) =>
-  useQuery({ queryKey: keys.invoices(status, q), queryFn: () => invoicesApi.list(status, q) });
+export const useInvoices = (status?: InvoiceFilter, q?: string, categoryId?: number) =>
+  useQuery({ queryKey: keys.invoices(status, q, categoryId), queryFn: () => invoicesApi.list(status, q, categoryId) });
 
 export const useScheduled = () => useQuery({ queryKey: keys.scheduled, queryFn: scheduledApi.list });
 
@@ -101,11 +105,11 @@ export const useTransfers = (f: { start?: string; end?: string; account_id?: num
 export const useAlerts = () =>
   useQuery({ queryKey: keys.alerts, queryFn: notificationsApi.alerts, refetchInterval: 5 * 60_000 });
 
-export const useYearReport = (year: number) =>
-  useQuery({ queryKey: keys.year(year), queryFn: () => reportsApi.year(year) });
+export const useYearReport = (year: number, categoryId?: number) =>
+  useQuery({ queryKey: keys.year(year, categoryId), queryFn: () => reportsApi.year(year, categoryId) });
 
-export const useFiscalReport = (month: string) =>
-  useQuery({ queryKey: keys.fiscal(month), queryFn: () => reportsApi.fiscal(month) });
+export const useFiscalReport = (month: string, categoryId?: number) =>
+  useQuery({ queryKey: keys.fiscal(month, categoryId), queryFn: () => reportsApi.fiscal(month, categoryId) });
 
 export const useTrash = () => useQuery({ queryKey: keys.trash, queryFn: dataApi.trash });
 

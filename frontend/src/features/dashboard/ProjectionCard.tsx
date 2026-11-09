@@ -13,10 +13,11 @@ export function ProjectionCard({ summary }: { summary: MonthSummary }) {
   return (
     <section className="card projection" aria-label="Proyección del mes">
       <div className="card-head">
-        <h2>{closed ? 'Cómo cerró el mes' : '¿Cómo cerrás el mes?'}</h2>
+        <h2>{closed ? 'Resultado del mes' : 'Resultado proyectado del mes'}</h2>
         {!closed && <span className="muted">{p.days_left === 1 ? 'Queda 1 día' : `Quedan ${p.days_left} días`}</span>}
       </div>
       <div className={`num big-figure ${negative ? 'neg' : 'pos'}`}>{money(p.projected_balance)}</div>
+      <p className="muted small">Ingresos menos gastos del período. El dinero que ya tenías figura en Disponible hoy.</p>
       <dl className="breakdown">
         <div>
           <dt>Ingresos registrados</dt>
@@ -34,29 +35,19 @@ export function ProjectionCard({ summary }: { summary: MonthSummary }) {
         </div>
         {p.pending_expense > 0 && (
           <div>
-            <dt>Pagos que faltan</dt>
+            <dt>Gastos pendientes</dt>
             <dd className="neg">− {money(p.pending_expense)}</dd>
           </div>
         )}
       </dl>
-      {!closed && (
-        <div className={`allowance ${negative ? 'bad' : ''}`}>
-          {negative ? (
-            <span>Con lo que falta pagar, el mes cierra en rojo. Revisá gastos que puedas postergar.</span>
-          ) : (
-            <span>
-              Podés gastar <b>{money(p.daily_allowance ?? 0)}</b> por día sin quedar en rojo.
-              {p.budget_daily_allowance !== null &&
-                (p.budget_daily_allowance > 0 ? (
-                  <>
-                    {' '}
-                    Para respetar tu presupuesto: <b>{money(p.budget_daily_allowance)}</b> por día.
-                  </>
-                ) : (
-                  <> Con lo que falta pagar ya usaste todo el presupuesto del mes.</>
-                ))}
-            </span>
-          )}
+      {p.card_payments > 0 && (
+        <p className="muted small">Resúmenes de tarjeta por pagar · <b>{money(p.card_payments)}</b>. Su pago reduce el efectivo disponible.</p>
+      )}
+      {!closed && p.budget_daily_allowance !== null && (
+        <div className="allowance">
+          {p.budget_daily_allowance > 0
+            ? <>Margen del presupuesto · <b>{money(p.budget_daily_allowance)}</b> por día.</>
+            : 'Los gastos registrados y pendientes consumen el presupuesto del mes.'}
         </div>
       )}
     </section>

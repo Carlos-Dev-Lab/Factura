@@ -1,7 +1,7 @@
 import enum
 from decimal import Decimal
 
-from sqlalchemy import Enum, Numeric, String, UniqueConstraint
+from sqlalchemy import Enum, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -23,3 +23,4 @@ class Category(OwnedMixin, Base):
     kind: Mapped[CategoryKind] = mapped_column(Enum(CategoryKind, native_enum=False, length=10))
     # Tope de gasto mensual de la categoría (solo para gastos). None = sin presupuesto.
     monthly_budget: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)

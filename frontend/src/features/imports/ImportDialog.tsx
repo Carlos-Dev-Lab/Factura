@@ -50,13 +50,16 @@ export function ImportDialog({ onClose, accountId }: { onClose: () => void; acco
   const [mode, setMode] = useState<AmountMode>('split');
   const [rows, setRows] = useState<(ImportRow & { selected: boolean })[]>([]);
   const [account, setAccount] = useState<number | null>(accountId ?? null);
+  const [accountChosen, setAccountChosen] = useState(accountId != null);
   const [busy, setBusy] = useState(false);
   const [editingColumns, setEditingColumns] = useState(false);
 
-  const read = async (f: File, m?: ImportMapping) => {
+  const read = async (f: File, m: ImportMapping | undefined, targetAccount: number | null) => {
     setBusy(true);
+    setPreview(null);
+    setRows([]);
     try {
-      const p = await dataApi.importPreview(f, m);
+      const p = await dataApi.importPreview(f, m, targetAccount);
       setPreview(p);
       const used = p.mapping ?? m ?? null;
       setMapping(
@@ -65,7 +68,6 @@ export function ImportDialog({ onClose, accountId }: { onClose: () => void; acco
       setMode(used && used.amount !== null ? 'single' : 'split');
       setEditingColumns(!p.mapping);
       setRows(p.rows.map((r) => ({ ...r, selected: !r.duplicate && !r.error })));
-      if (account === null) setAccount(accounts.find((a) => a.type === 'bank')?.id ?? accounts[0]?.id ?? null);
     } catch (err) {
       toast((err as Error).message);
     } finally {
@@ -106,15 +108,15 @@ export function ImportDialog({ onClose, accountId }: { onClose: () => void; acco
   const applyColumns = () => {
     if (!file || !mapping) return;
     const m = mode === 'single' ? { ...mapping, debit: null, credit: null } : { ...mapping, amount: null };
-    void read(file, m);
+    void read(file, m, account);
   };
 
   const submit = () => {
-    if (!preview) return;
+    if (!preview || editingColumns || commit.isPending) return;
     if (!chosen.length) return toast('No hay filas seleccionadas para importar');
     commit.mutate(undefined, {
       onSuccess: (r) => {
-        toast(`Se importaron ${r.created} movimientos`);
+        toast(r.created ? `Se importaron ${r.created} movimientos` : 'Este lote ya estaba importado');
         onClose();
       },
     });
@@ -131,7 +133,7 @@ export function ImportDialog({ onClose, accountId }: { onClose: () => void; acco
           <button type="button" className="btn" onClick={onClose}>
             Cancelar
           </button>
-          <button className="btn mint" disabled={!chosen.length || commit.isPending || busy}>
+          <button className="btn mint" disabled={!chosen.length || commit.isPending || busy || editingColumns}>
             Importar {chosen.length || ''} movimientos
           </button>
         </>
@@ -139,16 +141,24 @@ export function ImportDialog({ onClose, accountId }: { onClose: () => void; acco
     >
       <p className="muted">
         Descargá el extracto desde la web de tu banco en CSV o Excel (.xlsx). Se detectan las columnas, se marcan los
-        movimientos que ya cargaste y se sugiere la categoría.
+        posibles repetidos en la cuenta elegida y se sugiere la categoría. Hasta 2.000 movimientos por lote.
       </p>
       <Field label="Archivo">
         <input
           type="file"
+          disabled={busy || commit.isPending}
           accept=".csv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(e) => {
             const f = e.target.files?.[0] ?? null;
             setFile(f);
-            if (f) void read(f);
+            if (f) {
+              const target = accountChosen ? account : accounts.find((a) => a.type === 'bank')?.id ?? accounts[0]?.id ?? null;
+              setAccount(target);
+              void read(f, undefined, target);
+            } else {
+              setPreview(null);
+              setRows([]);
+            }
           }}
         />
       </Field>
@@ -212,7 +222,11 @@ export function ImportDialog({ onClose, accountId }: { onClose: () => void; acco
           {rows.length > 0 && (
             <>
               <div className="fgrid">
-                <AccountSelect label="Cuenta del extracto" value={account} onChange={setAccount} />
+                <AccountSelect label="Cuenta del extracto" value={account} onChange={(id) => {
+                  setAccountChosen(true);
+                  setAccount(id);
+                  if (file) void read(file, preview.mapping ?? undefined, id);
+                }} />
                 <div className="import-totals">
                   <span>
                     Gastos <b className="neg">{formatMoney(totals.expense, currency)}</b>
@@ -251,7 +265,7 @@ export function ImportDialog({ onClose, accountId }: { onClose: () => void; acco
                         <td>
                           {r.description || <span className="muted">Sin descripción</span>}
                           {r.duplicate && (
-                            <small className="tag dup" title="Ya hay un movimiento con la misma fecha y monto. Marcalo si igual querés importarlo.">
+                            <small className="tag dup" title="Coinciden la cuenta, fecha, monto, tipo y descripción. Marcalo si es otro movimiento.">
                               Posible repetido
                             </small>
                           )}

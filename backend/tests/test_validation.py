@@ -230,10 +230,10 @@ def test_restoring_an_old_scheduled_payment_after_paying_again_does_not_duplicat
 
 def test_import_marks_only_as_many_duplicates_as_already_loaded(client: TestClient) -> None:
     day = TODAY.strftime("%d/%m/%Y")
-    client.post("/api/v1/transactions", json={"amount": 95_000, "date": TODAY.isoformat(), "description": "Nafta"})
-    content = f"Fecha;Concepto;Débito\n{day};COMPRA A;95.000\n{day};COMPRA B;95.000\n".encode()
+    client.post("/api/v1/transactions", json={"amount": 95_000, "date": TODAY.isoformat(), "description": "COMPRA A"})
+    content = f"Fecha;Concepto;Débito\n{day};COMPRA A;95.000\n{day};COMPRA A;95.000\n{day};COMPRA B;95.000\n".encode()
     rows = client.post("/api/v1/imports/preview", files={"file": ("e.csv", content, "text/csv")}).json()["rows"]
-    assert [r["duplicate"] for r in rows] == [True, False]
+    assert [r["duplicate"] for r in rows] == [True, False, False]
 
 
 # ---------- Mensajes de validación en español ----------

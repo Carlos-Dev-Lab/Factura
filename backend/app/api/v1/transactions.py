@@ -3,7 +3,8 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.deps import DB, CurrentUser, PathId, verify_csrf
-from app.models import Transaction, TransactionKind
+from app.models import ScheduledPayment, Transaction, TransactionKind
+from app.schemas.scheduled import ScheduledIn, ScheduledOut
 from app.schemas.support import DeletedOut
 from app.schemas.transaction import TransactionIn, TransactionOut, TransactionPage, TransactionUpdate
 from app.services import transactions
@@ -52,6 +53,11 @@ def create_transaction(data: TransactionIn, user: CurrentUser, db: DB) -> Transa
 @router.patch("/{tx_id}", response_model=TransactionOut)
 def update_transaction(tx_id: PathId, data: TransactionUpdate, user: CurrentUser, db: DB) -> Transaction:
     return transactions.update(db, user, tx_id, data)
+
+
+@router.post("/{tx_id}/schedule", response_model=ScheduledOut, status_code=status.HTTP_201_CREATED)
+def schedule_expense(tx_id: PathId, data: ScheduledIn, user: CurrentUser, db: DB) -> ScheduledPayment:
+    return transactions.schedule_expense(db, user, tx_id, data)
 
 
 @router.delete("/{tx_id}", response_model=DeletedOut)

@@ -1,9 +1,11 @@
 import { useState } from 'react';
 
 import type { YearReport } from '../api/types';
+import { CategoryFilter } from '../components/CategoryFilter';
 import { Icon } from '../components/Icon';
 import { Loading } from '../components/Loading';
 import { useUser, useYearReport } from '../hooks/queries';
+import { useCategoryFilter } from '../hooks/useCategoryFilter';
 import { formatMoney } from '../lib/format';
 
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'];
@@ -97,7 +99,8 @@ export function ReportsPage() {
   const { currency } = useUser();
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [table, setTable] = useState(false);
-  const report = useYearReport(year);
+  const { categoryId, selectCategory } = useCategoryFilter();
+  const report = useYearReport(year, categoryId);
   const money = (v: number) => formatMoney(v, currency);
 
   return (
@@ -114,6 +117,7 @@ export function ReportsPage() {
             <Icon name="right" size={18} stroke={2.4} />
           </button>
         </div>
+        <CategoryFilter categoryId={categoryId} onChange={selectCategory} />
       </div>
       {!report.data ? (
         <Loading error={report.error} />
@@ -130,11 +134,11 @@ export function ReportsPage() {
               <div className="muted small">
                 {report.data.months_counted
                   ? `Promedio: ${money(report.data.average_expense)} por mes`
-                  : 'Año sin meses transcurridos'}
+                  : 'Sin meses con movimientos para calcular el promedio'}
               </div>
             </div>
             <div className="card kpi">
-              <span className="muted">Saldo del año</span>
+              <span className="muted">Resultado del año</span>
               <div className={`num ${report.data.balance < 0 ? 'neg' : 'pos'}`}>{money(report.data.balance)}</div>
             </div>
           </section>
@@ -181,7 +185,6 @@ export function ReportsPage() {
               <ul className="cat-year">
                 {report.data.categories.map((c) => {
                   const share = report.data.expense ? (c.total / report.data.expense) * 100 : 0;
-                  const avg = report.data.months_counted ? c.total / report.data.months_counted : 0;
                   return (
                     <li key={c.category_id ?? 'none'}>
                       <div className="row-between">
@@ -195,7 +198,7 @@ export function ReportsPage() {
                         <div style={{ width: `${share}%`, background: c.color }} />
                       </div>
                       <span className="hint">
-                        {share.toFixed(1)}% de los gastos · {money(avg)} por mes en promedio
+                        {share.toFixed(1)}% de los gastos · {money(c.average_expense)} por mes en promedio
                       </span>
                     </li>
                   );

@@ -43,23 +43,21 @@ def resolve(db: Session, user: User, account_id: int | None) -> int | None:
 
 
 def _balances(db: Session, user: User, until: date | None = None) -> dict[int, tuple[Decimal, int]]:
-    """(saldo, cantidad de movimientos) por cuenta, opcionalmente hasta una fecha inclusive."""
+    """Saldo hasta la fecha indicada y cantidad de movimientos de todas las fechas."""
     signed = case((Transaction.kind == TransactionKind.income, Transaction.amount), else_=-Transaction.amount)
+    moved = Transfer.amount
+    if until is not None:
+        signed = case((Transaction.date <= until, signed), else_=0)
+        moved = case((Transfer.date <= until, Transfer.amount), else_=0)
     tx = select(Transaction.account_id, func.coalesce(func.sum(signed), 0), func.count()).where(
         Transaction.user_id == user.id, Transaction.account_id.is_not(None)
     )
-    out_tr = select(Transfer.from_account_id, func.coalesce(func.sum(Transfer.amount), 0), func.count()).where(
+    out_tr = select(Transfer.from_account_id, func.coalesce(func.sum(moved), 0), func.count()).where(
         Transfer.user_id == user.id
     )
-    in_tr = select(Transfer.to_account_id, func.coalesce(func.sum(Transfer.amount), 0), func.count()).where(
+    in_tr = select(Transfer.to_account_id, func.coalesce(func.sum(moved), 0), func.count()).where(
         Transfer.user_id == user.id
     )
-    if until is not None:
-        tx, out_tr, in_tr = (
-            tx.where(Transaction.date <= until),
-            out_tr.where(Transfer.date <= until),
-            in_tr.where(Transfer.date <= until),
-        )
     totals: dict[int, tuple[Decimal, int]] = {}
 
     def add(rows: object, sign: int) -> None:
@@ -101,7 +99,8 @@ def card_status(db: Session, user: User, acc: Account, balance: Decimal, today: 
     payments_after = (
         db.scalar(
             select(func.coalesce(func.sum(Transfer.amount), 0)).where(
-                Transfer.user_id == user.id, Transfer.to_account_id == acc.id, Transfer.date > last_close
+                Transfer.user_id == user.id, Transfer.to_account_id == acc.id,
+                Transfer.date > last_close, Transfer.date <= today,
             )
         )
         or ZERO
@@ -113,6 +112,7 @@ def card_status(db: Session, user: User, acc: Account, balance: Decimal, today: 
                 Transaction.account_id == acc.id,
                 Transaction.kind == TransactionKind.expense,
                 Transaction.date > last_close,
+                Transaction.date <= today,
             )
         )
         or ZERO
@@ -149,13 +149,15 @@ def list_accounts(db: Session, user: User, *, include_archived: bool = True) -> 
     if not include_archived:
         stmt = stmt.where(Account.archived.is_(False))
     accounts = list(db.scalars(stmt.order_by(Account.archived, Account.id)))
-    totals = _balances(db, user)
     today = date.today()
+    totals = _balances(db, user, until=today)
     return [to_out(db, user, a, totals, today) for a in accounts]
 
 
 def get_out(db: Session, user: User, account_id: int) -> AccountOut:
-    return to_out(db, user, get_owned(db, user, account_id), _balances(db, user), date.today())
+    today = date.today()
+    account = get_owned(db, user, account_id)
+    return to_out(db, user, account, _balances(db, user, until=today), today)
 
 
 # ---------- Alta, edición y baja ----------
@@ -278,7 +280,7 @@ def delete_transfer(db: Session, user: User, transfer_id: int) -> None:
 def pending_card_statements(db: Session, user: User, today: date) -> list[tuple[Account, CardStatus]]:
     """Tarjetas con un resumen cerrado que todavía falta pagar (visto desde hoy)."""
     out = []
-    totals = _balances(db, user)
+    totals = _balances(db, user, until=today)
     cards = select(Account).where(
         Account.user_id == user.id, Account.type == AccountType.card, Account.archived.is_(False)
     )

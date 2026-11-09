@@ -153,14 +153,17 @@ def test_editing_invoice_payment_keeps_invoice_in_sync(client: TestClient) -> No
     assert client.get("/api/v1/transactions").json()["items"][0]["description"] == "Factura Tigo Paraguay 001-001-1"
 
 
-def test_scheduled_payment_cannot_move_to_another_month(client: TestClient) -> None:
+def test_editing_scheduled_payment_date_keeps_its_original_period(client: TestClient) -> None:
     sp = client.post(
         "/api/v1/scheduled-payments",
         json={"name": "Alquiler", "amount": 100, "day_of_month": 5, "start_month": "2026-01"},
     ).json()
     tx = client.post(f"/api/v1/scheduled-payments/{sp['id']}/pay", json={"month": "2026-02"}).json()
-    assert client.patch(f"/api/v1/transactions/{tx['id']}", json={"date": "2026-03-05"}).status_code == 422
-    assert client.patch(f"/api/v1/transactions/{tx['id']}", json={"date": "2026-02-20"}).status_code == 200
+    assert client.patch(f"/api/v1/transactions/{tx['id']}", json={"date": "2026-01-31"}).status_code == 422
+    updated = client.patch(f"/api/v1/transactions/{tx['id']}", json={"date": "2026-03-05"})
+    assert updated.status_code == 200 and updated.json()["date"] == "2026-03-05"
+    same = client.post(f"/api/v1/scheduled-payments/{sp['id']}/pay", json={"month": "2026-02"}).json()
+    assert same["id"] == tx["id"]
 
 
 def test_file_cannot_be_shared_by_two_invoices(client: TestClient) -> None:

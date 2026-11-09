@@ -5,6 +5,7 @@ import io
 import json
 import zipfile
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 import zxingcpp
@@ -390,7 +391,7 @@ Saldo final;;;;3.115.000
 
 
 def test_bank_csv_import(client: TestClient) -> None:
-    client.post("/api/v1/transactions", json={"amount": 385_000, "date": "2026-10-03", "description": "ANDE"})
+    client.post("/api/v1/transactions", json={"amount": 385_000, "date": "2026-10-03", "description": "PAGO ANDE"})
     r = client.post("/api/v1/imports/preview", files={"file": ("e.csv", STATEMENT.encode("latin-1"), "text/csv")})
     assert r.status_code == 200, r.text
     preview = r.json()
@@ -504,7 +505,7 @@ def test_fiscal_report_csv_and_zip(client: TestClient) -> None:
             "supplier": "Farmacia",
             "ruc": "80000519-8",
             "number": "001-001-1",
-            "total": 221_000,
+            "total": 232_000,
             "iva10": 19_182,
             "iva5": 1_000,
             "issue_date": "2026-09-15",
@@ -514,7 +515,7 @@ def test_fiscal_report_csv_and_zip(client: TestClient) -> None:
     client.post("/api/v1/invoices", json={"supplier": "Sin IVA", "total": 50_000, "issue_date": "2026-09-20"})
     rep = client.get("/api/v1/reports/fiscal", params={"month": "2026-09"}).json()
     assert (rep["iva10"], rep["taxed10"], rep["iva5"], rep["taxed5"]) == (19_182, 211_002, 1_000, 21_000)
-    assert (rep["irp_total"], rep["missing_iva"], len(rep["rows"])) == (221_000, 1, 2)
+    assert (rep["irp_total"], rep["missing_iva"], len(rep["rows"])) == (232_000, 1, 2)
     csv = client.get("/api/v1/reports/fiscal.csv", params={"month": "2026-09"}).text
     assert "80000519-8" in csv and "Sí" in csv
     z = client.get("/api/v1/reports/fiscal.zip", params={"month": "2026-09"})
@@ -523,13 +524,18 @@ def test_fiscal_report_csv_and_zip(client: TestClient) -> None:
 
 
 def test_full_export_zip(client: TestClient) -> None:
+    client.patch("/api/v1/auth/me", json={"monthly_budget": 150, "daily_limit": 40})
     client.post("/api/v1/transactions", json={"amount": 10, "date": "2026-10-01", "description": "Pan"})
+    removed = client.post("/api/v1/transactions", json={"amount": 20, "date": "2026-10-01"}).json()
+    client.delete(f"/api/v1/transactions/{removed['id']}")
     z = client.get("/api/v1/export/full.zip")
     assert z.status_code == 200
     with zipfile.ZipFile(io.BytesIO(z.content)) as zf:
         assert {"datos.json", "movimientos.csv"} <= set(zf.namelist())
         data = json.loads(zf.read("datos.json"))
     assert data["transactions"][0]["description"] == "Pan"
+    assert (Decimal(data["user"]["monthly_budget"]), Decimal(data["user"]["daily_limit"])) == (150, 40)
+    assert data["trash"][0]["payload"]["row"]["id"] == removed["id"]
     assert "password_hash" not in json.dumps(data)
 
 

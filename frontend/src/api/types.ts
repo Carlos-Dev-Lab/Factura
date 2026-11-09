@@ -238,6 +238,7 @@ export interface BudgetStatus {
 interface Projection {
   pending_income: number;
   pending_expense: number;
+  card_payments: number;
   projected_balance: number;
   days_left: number;
   daily_allowance: number | null;
@@ -252,6 +253,7 @@ export interface MonthSummary {
   budget: number;
   budget_used_pct: number | null;
   previous_expense: number;
+  previous_income: number;
   expense_change_pct: number | null;
   due_total: number;
   overdue_count: number;
@@ -275,7 +277,7 @@ export interface CalendarDay {
 export interface YearReport {
   year: number;
   months: { month: string; income: number; expense: number; balance: number }[];
-  categories: { category_id: number | null; name: string; color: string; total: number; months: number[] }[];
+  categories: { category_id: number | null; name: string; color: string; total: number; months: number[]; average_expense: number }[];
   income: number;
   expense: number;
   balance: number;

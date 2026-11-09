@@ -27,6 +27,15 @@ class CategoryRule(OwnedMixin, Base):
     category: Mapped[Category] = relationship(lazy="joined")
 
 
+class ImportBatch(Base):
+    """Identidad de un lote confirmado, independiente del orden de sus filas."""
+
+    __tablename__ = "import_batches"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+
 class PushSubscription(OwnedMixin, TimestampMixin, Base):
     """Un navegador o celular que acepta notificaciones push."""
 

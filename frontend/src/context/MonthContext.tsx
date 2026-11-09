@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 
-import { monthOf, todayIso } from '../lib/format';
+import { defaultDayForMonth, monthOf, todayIso } from '../lib/format';
 
 interface MonthState {
   month: string;
@@ -13,10 +13,7 @@ const MonthContext = createContext<MonthState | null>(null);
 
 export function MonthProvider({ children }: { children: ReactNode }) {
   const [month, setMonth] = useState(() => monthOf(todayIso()));
-  const value = useMemo(() => {
-    const today = todayIso();
-    return { month, setMonth, defaultDay: monthOf(today) === month ? today : `${month}-01` };
-  }, [month]);
+  const value = useMemo(() => ({ month, setMonth, defaultDay: defaultDayForMonth(month) }), [month]);
   return <MonthContext.Provider value={value}>{children}</MonthContext.Provider>;
 }
 

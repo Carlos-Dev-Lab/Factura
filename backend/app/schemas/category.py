@@ -22,3 +22,8 @@ class CategoryOut(ORMModel):
     color: str
     kind: CategoryKind
     monthly_budget: Money | None
+
+
+class CategoryOrder(InputModel):
+    kind: CategoryKind
+    ids: list[int]

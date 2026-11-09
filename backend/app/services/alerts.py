@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.models import Category, Invoice, InvoiceStatus, Transaction, TransactionKind, User
 from app.schemas.support import Alert, AlertLevel
 from app.services import accounts, scheduled
-from app.services.dates import add_months, month_key, month_range
+from app.services.dates import month_key, month_range
 from app.services.reports import WARN_PCT, budget_statuses
 
 LEVEL_ORDER = {AlertLevel.danger: 0, AlertLevel.warn: 1, AlertLevel.info: 2}
@@ -111,23 +111,20 @@ def compute(db: Session, user: User, today: date | None = None) -> list[Alert]:
         if a := _due_alert("inv", inv.id, name, inv.total, inv.due_date, today, days, cur, "/facturas"):  # type: ignore[arg-type]
             alerts.append(a)
 
-    # Pagos fijos de este mes y del anterior (por si quedó uno sin pagar).
-    this_month = today.replace(day=1)
-    for first in (add_months(this_month, -1), this_month):
-        start, end = month_range(month_key(first))
-        paid = scheduled.paid_ids_in_range(db, user, start, end)
-        for sp in scheduled.list_payments(db, user, only_active=True):
-            if sp.kind != TransactionKind.expense or sp.id in paid or not scheduled.applies_to(sp, first):
-                continue
-            due = scheduled.occurrence(sp, first)
-            # Si quedó impago el del mes anterior, el título dice de qué mes es (si no, se ven dos iguales).
-            label = (
-                f"El pago de {sp.name}"
-                if first == this_month
-                else f"El pago de {sp.name} de {MONTH_NAMES[first.month - 1]}"
-            )
-            if a := _due_alert(f"fijo{first:%Y%m}", sp.id, label, sp.amount, due, today, days, cur, "/calendario"):
-                alerts.append(a)
+    start, end = month_range(month_key(today))
+    paid = scheduled.paid_ids_in_range(db, user, start, end)
+    pending_fixed = scheduled.overdue_expenses(db, user, start)
+    pending_fixed += [
+        (sp, start) for sp in scheduled.list_payments(db, user, only_active=True)
+        if sp.kind == TransactionKind.expense and sp.id not in paid and scheduled.applies_to(sp, start)
+    ]
+    for sp, period in pending_fixed:
+        due = scheduled.occurrence(sp, period)
+        label = f"El pago de {sp.name}"
+        if period < start:
+            label += f" de {MONTH_NAMES[period.month - 1]} de {period.year}"
+        if a := _due_alert(f"fijo{period:%Y%m}", sp.id, label, sp.amount, due, today, days, cur, "/calendario"):
+            alerts.append(a)
 
     # Resúmenes de tarjeta.
     for acc, status in accounts.pending_card_statements(db, user, today):

@@ -79,6 +79,11 @@ export const isIsoDate = (s: string | null): s is string =>
 export const todayIso = () => isoDate(new Date());
 export const monthOf = (iso: string) => iso.slice(0, 7);
 
+export function defaultDayForMonth(month: string): string {
+  const today = todayIso();
+  return monthOf(today) === month ? today : `${month}-01`;
+}
+
 export function shiftMonth(month: string, delta: number): string {
   const d = parseIso(`${month}-01`);
   d.setMonth(d.getMonth() + delta);

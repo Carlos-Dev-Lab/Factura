@@ -78,14 +78,14 @@ export function DataSection() {
             </a>
           </div>
           <div className="export-box">
-            <p className="soft">Todos los movimientos registrados, desde el primero hasta hoy.</p>
+            <p className="soft">Todos los movimientos registrados, incluidas las fechas futuras.</p>
             <a className="btn" href={reportsApi.exportUrl()}>
               Descargar todo
             </a>
           </div>
           <div className="export-box">
             <p className="soft">
-              Copia completa de tu cuenta: movimientos, facturas con sus archivos, cuentas, pagos fijos y reglas (ZIP).
+              ZIP con tus datos, adjuntos, presupuesto y papelera. Para restaurar el sistema, usá un respaldo del servidor.
             </p>
             <a className="btn" href={reportsApi.fullExportUrl()}>
               <Icon name="download" size={18} /> Descargar mis datos

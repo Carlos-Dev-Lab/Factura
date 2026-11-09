@@ -7,6 +7,7 @@ from app.models.login_attempt import LoginAttempt
 from app.models.scheduled_payment import ScheduledPayment
 from app.models.support import (
     CategoryRule,
+    ImportBatch,
     NotificationLog,
     PushSubscription,
     RevokedSession,
@@ -22,6 +23,7 @@ __all__ = [
     "Category",
     "CategoryKind",
     "CategoryRule",
+    "ImportBatch",
     "Invoice",
     "InvoiceStatus",
     "LoginAttempt",

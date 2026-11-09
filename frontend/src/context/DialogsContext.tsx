@@ -19,7 +19,6 @@ import { InvoiceDialog, type InvoiceDialogState } from '../features/invoices/Inv
 import { ScheduledDialog, type ScheduledDialogState } from '../features/scheduled/ScheduledDialog';
 import { TransactionDialog, type TransactionDraft } from '../features/transactions/TransactionDialog';
 import { takeSharedFile } from '../lib/pwa';
-import { useMonth } from './MonthContext';
 import { useToast } from './ToastContext';
 
 interface Dialogs {
@@ -53,7 +52,6 @@ const INVOICE_ACCEPT = 'application/pdf,image/*,.xml,text/xml,application/xml';
 
 export function DialogsProvider({ children }: { children: ReactNode }) {
   const [active, setActive] = useState<Active>(null);
-  const { defaultDay } = useMonth();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -120,7 +118,7 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
       <input ref={fileRef} type="file" accept={INVOICE_ACCEPT} hidden onChange={onFile} />
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
       {active?.type === 'transaction' && (
-        <TransactionDialog initial={active.draft} defaultDate={defaultDay} onClose={close} />
+        <TransactionDialog initial={active.draft} onClose={close} />
       )}
       {active?.type === 'invoice' && <InvoiceDialog state={active.state} onClose={close} />}
       {active?.type === 'scheduled' && <ScheduledDialog state={active.state} onClose={close} />}

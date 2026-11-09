@@ -45,6 +45,8 @@ class Transaction(OwnedMixin, TimestampMixin, Base):
     scheduled_payment_id: Mapped[int | None] = mapped_column(
         ForeignKey("scheduled_payments.id", ondelete="SET NULL"), index=True
     )
+    # Mes de la cuota, independiente del día en que se pagó.
+    scheduled_month: Mapped[dt.date | None] = mapped_column(Date)
 
     category: Mapped[Category | None] = relationship(lazy="joined")
     account: Mapped[Account | None] = relationship(lazy="joined")

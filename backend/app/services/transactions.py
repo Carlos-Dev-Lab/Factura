@@ -5,10 +5,12 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import contains_pattern, fetch
-from app.core.errors import NotFoundError, ValidationError
-from app.models import Category, CategoryKind, Invoice, InvoiceStatus, Transaction, TransactionKind, User
+from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.models import Category, CategoryKind, Invoice, InvoiceStatus, ScheduledPayment, Transaction, TransactionKind, User
+from app.schemas.scheduled import ScheduledIn
 from app.schemas.transaction import TransactionIn, TransactionUpdate
-from app.services import accounts, categories, rules
+from app.services import accounts, categories, invoices, rules, scheduled
+from app.services.dates import month_key, month_start
 
 
 def _category_kind(kind: TransactionKind) -> CategoryKind:
@@ -81,6 +83,26 @@ def create(db: Session, user: User, data: TransactionIn, *, learn: bool = True) 
     return tx
 
 
+def schedule_expense(db: Session, user: User, tx_id: int, data: ScheduledIn) -> ScheduledPayment:
+    """Crea la recurrencia y vincula el gasto existente sin registrar otro movimiento."""
+    tx = get_owned(db, user, tx_id, lock=True)
+    if tx.kind != TransactionKind.expense or data.kind != TransactionKind.expense:
+        raise ValidationError("Solo se puede convertir un gasto en un pago fijo")
+    if tx.scheduled_payment_id is not None or tx.invoice_id is not None:
+        raise ConflictError("El gasto ya está vinculado a un pago fijo o a una factura")
+
+    paid_month = tx.date.replace(day=1)
+    earliest_start = max(paid_month, date.today().replace(day=1))
+    start = month_start(data.start_month) if data.start_month else earliest_start
+    if start < earliest_start:
+        raise ValidationError(f"El pago fijo puede empezar desde {month_key(earliest_start)}")
+    payment = scheduled.create(db, user, data.model_copy(update={"start_month": month_key(start)}))
+    tx.scheduled_payment_id = payment.id
+    tx.scheduled_month = paid_month
+    db.flush()
+    return payment
+
+
 def _check_linked_change(tx: Transaction, changes: dict) -> None:
     """Un pago de factura o de pago fijo tiene reglas propias para no desincronizarse."""
     if tx.invoice_id is None and tx.scheduled_payment_id is None:
@@ -88,17 +110,11 @@ def _check_linked_change(tx: Transaction, changes: dict) -> None:
     if changes.get("kind") not in (None, tx.kind):
         raise ValidationError("El tipo de un pago de factura o de un pago fijo no se puede cambiar")
     new_date = changes.get("date")
-    if (
-        tx.scheduled_payment_id is not None
-        and new_date
-        and (new_date.year, new_date.month)
-        != (
-            tx.date.year,
-            tx.date.month,
-        )
-    ):
-        # El mes del pago es el que indica qué mes quedó pagado en el calendario.
-        raise ValidationError("El pago de un pago fijo debe quedar dentro del mismo mes")
+    if tx.scheduled_payment_id is not None and new_date:
+        period = tx.scheduled_month or tx.date.replace(day=1)
+        if new_date < period:
+            raise ValidationError("La fecha de pago no puede ser anterior al mes de la cuota")
+        tx.scheduled_month = period
 
 
 def update(db: Session, user: User, tx_id: int, data: TransactionUpdate) -> Transaction:
@@ -117,8 +133,10 @@ def update(db: Session, user: User, tx_id: int, data: TransactionUpdate) -> Tran
         tx.category_id = categories.resolve(db, user, cat_id, _category_kind(tx.kind))
         if "category_id" in changes and tx.invoice_id is None and tx.scheduled_payment_id is None:
             rules.learn_from_text(db, user, tx.description, tx.category_id)
-    if tx.invoice_id is not None and (invoice := db.get(Invoice, tx.invoice_id)):
+    if tx.invoice_id is not None and (invoice := fetch(db, Invoice, tx.invoice_id, lock=True)):
         # La factura pagada refleja lo que se corrigió en su pago.
+        if tx.amount != invoice.total:
+            invoices.check_taxes(invoice, total=tx.amount)
         invoice.total = tx.amount
         invoice.paid_on = tx.date
         invoice.category_id = tx.category_id

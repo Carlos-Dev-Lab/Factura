@@ -4,7 +4,7 @@ import type { MonthSummary } from '../../api/types';
 import { useUser } from '../../hooks/queries';
 import { formatDate, formatMoney, todayIso } from '../../lib/format';
 
-export function DailyBars({ daily, limit }: { daily: MonthSummary['daily']; limit: number }) {
+export function DailyBars({ daily, limit, categoryId }: { daily: MonthSummary['daily']; limit: number; categoryId?: number }) {
   const { currency } = useUser();
   const today = todayIso();
   const max = Math.max(1, limit, ...daily.map((d) => d.expense));
@@ -21,7 +21,7 @@ export function DailyBars({ daily, limit }: { daily: MonthSummary['daily']; limi
               <div key={d.date} className="col">
                 <span className="tip">{label}</span>
                 <Link
-                  to={`/gastos?dia=${d.date}`}
+                  to={`/gastos?dia=${d.date}${categoryId === undefined ? '' : `&categoria=${categoryId}`}`}
                   className={`bar ${cls}`}
                   style={{ height: `${(d.expense / max) * 100}%` }}
                   aria-label={label}

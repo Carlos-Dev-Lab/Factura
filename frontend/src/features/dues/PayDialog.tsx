@@ -6,13 +6,11 @@ import { AccountSelect, Field, MoneyInput } from '../../components/fields';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../context/ToastContext';
 import { useActiveAccounts, useFinancialMutation, usePaymentHistory, useScheduled, useUser } from '../../hooks/queries';
-import { formatMoney, monthOf, PAYMENT_METHODS, todayIso } from '../../lib/format';
+import { formatMoney, monthLabel, monthOf, PAYMENT_METHODS, todayIso } from '../../lib/format';
 
-/** Para pagos de un mes pasado, la fecha tiene que quedar dentro de ese mes. */
 function defaultDate(due: DueItem): string {
   const today = todayIso();
-  if (!due.date || monthOf(due.date) === monthOf(today)) return today;
-  return due.date;
+  return due.kind === 'scheduled' && due.date && monthOf(due.date) > monthOf(today) ? due.date : today;
 }
 
 function VariationHint({ paymentId, amount }: { paymentId: number; amount: number }) {
@@ -63,7 +61,7 @@ export function PayDialog({ due, onClose }: { due: DueItem; onClose: () => void 
   );
 
   const month = monthOf(due.date ?? todayIso());
-  const outsideMonth = due.kind === 'scheduled' && monthOf(date) !== month;
+  const beforePeriod = due.kind === 'scheduled' && monthOf(date) < month;
 
   return (
     <Modal
@@ -71,7 +69,7 @@ export function PayDialog({ due, onClose }: { due: DueItem; onClose: () => void 
       onClose={onClose}
       onSubmit={() => {
         if (amount <= 0) return toast('Ingresá un monto mayor a cero');
-        if (outsideMonth) return toast('La fecha tiene que estar dentro del mes del pago');
+        if (beforePeriod) return toast('La fecha de pago no puede ser anterior al mes de la cuota');
         pay.mutate(undefined, { onSuccess: onClose });
       }}
       footer={
@@ -86,6 +84,7 @@ export function PayDialog({ due, onClose }: { due: DueItem; onClose: () => void 
       }
     >
       {due.detail && <div className="found mid">{due.detail}</div>}
+      {due.kind === 'scheduled' && <p className="hint">Período de la cuota · {monthLabel(month)}</p>}
       {due.kind === 'invoice' ? (
         <div className="pay-amount">
           <span className="muted">Monto de la factura</span>

@@ -4,10 +4,11 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import extract, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import extract, func, select, true
+from sqlalchemy.orm import InstrumentedAttribute, Session
+from sqlalchemy.sql.elements import ColumnElement
 
-from app.models import Category, CategoryKind, Invoice, InvoiceStatus, Transaction, TransactionKind, User
+from app.models import Category, CategoryKind, Invoice, InvoiceStatus, ScheduledPayment, Transaction, TransactionKind, User
 from app.schemas.report import (
     BudgetStatus,
     CalendarDay,
@@ -23,6 +24,7 @@ from app.schemas.report import (
     MonthSummary,
     MonthTotal,
     Projection,
+    YearExpense,
     YearReport,
 )
 from app.services import accounts, scheduled
@@ -32,6 +34,10 @@ UNCATEGORIZED_COLOR = "#A3ADC8"
 UPCOMING_LIMIT = 12
 ZERO = Decimal(0)
 WARN_PCT, OVER_PCT = 80, 100
+
+
+def _category(column: InstrumentedAttribute[int | None], category_id: int | None) -> ColumnElement[bool]:
+    return true() if category_id is None else column == category_id
 
 
 def _pct(part: Decimal, whole: Decimal) -> float | None:
@@ -55,30 +61,35 @@ def _invoice_due(inv: Invoice, today: date) -> DueItem:
     )
 
 
-def _scheduled_dues(db: Session, user: User, start: date, end: date, today: date) -> list[DueItem]:
+def _scheduled_due(sp: ScheduledPayment, period: date, today: date, paid: Decimal | None = None) -> DueItem:
+    when = scheduled.occurrence(sp, period)
+    state = DueState.paid if paid is not None else (DueState.overdue if when < today else DueState.pending)
+    return DueItem(
+        kind=DueKind.scheduled,
+        id=sp.id,
+        name=sp.name,
+        amount=sp.amount if paid is None else paid,
+        date=when,
+        state=state,
+        direction="in" if sp.kind == TransactionKind.income else "out",
+        detail=scheduled.installment_label(sp, period) if scheduled.applies_to(sp, period) else None,
+        estimated=sp.variable_amount and paid is None,
+    )
+
+
+def _scheduled_dues(
+    db: Session, user: User, start: date, end: date, today: date, category_id: int | None = None
+) -> list[DueItem]:
     paid = scheduled.paid_in_range(db, user, start, end)
     items = []
     for sp in scheduled.list_payments(db, user, only_active=True):
+        if category_id is not None and sp.category_id != category_id:
+            continue
         applies = scheduled.applies_to(sp, start)
         # Fuera de su período (antes de empezar o después de la última cuota) no corresponde.
         if not applies and sp.id not in paid:
             continue
-        when = scheduled.occurrence(sp, start)
-        is_paid = sp.id in paid
-        state = DueState.paid if is_paid else (DueState.overdue if when < today else DueState.pending)
-        items.append(
-            DueItem(
-                kind=DueKind.scheduled,
-                id=sp.id,
-                name=sp.name,
-                amount=paid.get(sp.id, sp.amount),
-                date=when,
-                state=state,
-                direction="in" if sp.kind == TransactionKind.income else "out",
-                detail=scheduled.installment_label(sp, start) if applies else None,
-                estimated=sp.variable_amount and not is_paid,
-            )
-        )
+        items.append(_scheduled_due(sp, start, today, paid.get(sp.id)))
     return items
 
 
@@ -98,16 +109,22 @@ def _card_dues(db: Session, user: User, today: date) -> list[DueItem]:
     ]
 
 
-def _month_transactions(db: Session, user: User, start: date, end: date) -> list[Transaction]:
+def _month_transactions(
+    db: Session, user: User, start: date, end: date, category_id: int | None = None
+) -> list[Transaction]:
     return list(
-        db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.date.between(start, end)))
+        db.scalars(select(Transaction).where(
+            Transaction.user_id == user.id, Transaction.date.between(start, end),
+            _category(Transaction.category_id, category_id),
+        ))
     )
 
 
-def _expense_on(db: Session, user: User, day: date) -> Decimal:
+def _expense_on(db: Session, user: User, day: date, category_id: int | None = None) -> Decimal:
     """Total gastado en un día (el panel siempre muestra el de hoy, aunque se mire otro mes)."""
     stmt = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-        Transaction.user_id == user.id, Transaction.kind == TransactionKind.expense, Transaction.date == day
+        Transaction.user_id == user.id, Transaction.kind == TransactionKind.expense, Transaction.date == day,
+        _category(Transaction.category_id, category_id),
     )
     return db.scalar(stmt) or ZERO
 
@@ -135,7 +152,7 @@ def budget_statuses(categories: dict[int, Category], spent: dict[int | None, Dec
 
 
 def _projection(
-    user: User,
+    budget: Decimal,
     start: date,
     end: date,
     today: date,
@@ -148,6 +165,7 @@ def _projection(
         return Projection(
             pending_income=ZERO,
             pending_expense=ZERO,
+            card_payments=ZERO,
             projected_balance=income - expense,
             days_left=0,
             daily_allowance=None,
@@ -162,17 +180,19 @@ def _projection(
         return d.date <= end and (current or d.date >= start)
 
     pending_in = sum((d.amount for d in dues if d.direction == "in" and counts(d)), ZERO)
-    pending_out = sum((d.amount for d in dues if d.direction == "out" and counts(d)), ZERO)
+    pending_out = sum((d.amount for d in dues if d.direction == "out" and d.kind != DueKind.card and counts(d)), ZERO)
+    card_payments = sum((d.amount for d in dues if d.kind == DueKind.card and counts(d)), ZERO)
     projected = income - expense + pending_in - pending_out
     days_left = (end - max(today, start)).days + 1
     allowance = (max(ZERO, projected) / days_left).quantize(Decimal("1"))
     budget_allowance = None
-    if user.monthly_budget:
-        remaining = max(ZERO, user.monthly_budget - expense - pending_out)
+    if budget:
+        remaining = max(ZERO, budget - expense - pending_out)
         budget_allowance = (remaining / days_left).quantize(Decimal("1"))
     return Projection(
         pending_income=pending_in,
         pending_expense=pending_out,
+        card_payments=card_payments,
         projected_balance=projected,
         days_left=days_left,
         daily_allowance=allowance,
@@ -180,10 +200,10 @@ def _projection(
     )
 
 
-def summary(db: Session, user: User, month: str) -> MonthSummary:
+def summary(db: Session, user: User, month: str, category_id: int | None = None) -> MonthSummary:
     start, end = month_range(month)
     today = date.today()
-    txs = _month_transactions(db, user, start, end)
+    txs = _month_transactions(db, user, start, end, category_id)
 
     income = sum((t.amount for t in txs if t.kind == TransactionKind.income), ZERO)
     expense = sum((t.amount for t in txs if t.kind == TransactionKind.expense), ZERO)
@@ -198,6 +218,9 @@ def summary(db: Session, user: User, month: str) -> MonthSummary:
         else:
             slot[1] += t.amount
     cat_info = {c.id: c for c in db.scalars(select(Category).where(Category.user_id == user.id))}
+    chosen = cat_info.get(category_id) if category_id is not None else None
+    budget = user.monthly_budget if category_id is None else (chosen.monthly_budget if chosen else None) or ZERO
+    budget_categories = cat_info if category_id is None else ({chosen.id: chosen} if chosen else {})
     by_category = sorted(
         (
             CategoryTotal(
@@ -212,21 +235,28 @@ def summary(db: Session, user: User, month: str) -> MonthSummary:
     )
 
     prev_end = start - timedelta(days=1)
-    previous = (
-        db.scalar(
-            select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+    previous_totals = dict(
+        db.execute(
+            select(Transaction.kind, func.sum(Transaction.amount)).where(
                 Transaction.user_id == user.id,
-                Transaction.kind == TransactionKind.expense,
                 Transaction.date.between(prev_end.replace(day=1), prev_end),
-            )
-        )
-        or ZERO
+                _category(Transaction.category_id, category_id),
+            ).group_by(Transaction.kind)
+        ).tuples().all()
     )
+    previous = previous_totals.get(TransactionKind.expense, ZERO)
 
-    pending = db.scalars(select(Invoice).where(Invoice.user_id == user.id, Invoice.status == InvoiceStatus.pending))
+    pending = db.scalars(select(Invoice).where(
+        Invoice.user_id == user.id, Invoice.status == InvoiceStatus.pending, _category(Invoice.category_id, category_id)
+    ))
     dues = [_invoice_due(i, today) for i in pending]
-    dues += _scheduled_dues(db, user, start, end, today)
-    if end >= today:
+    dues += _scheduled_dues(db, user, start, end, today, category_id)
+    if start <= today <= end:
+        dues += [
+            _scheduled_due(sp, period, today) for sp, period in scheduled.overdue_expenses(db, user, start)
+            if category_id is None or sp.category_id == category_id
+        ]
+    if end >= today and category_id is None:
         dues += _card_dues(db, user, today)
     upcoming = sorted((d for d in dues if d.state != DueState.paid), key=lambda d: d.date or date.max)
     to_pay = [d for d in upcoming if d.direction == "out"]
@@ -236,54 +266,71 @@ def summary(db: Session, user: User, month: str) -> MonthSummary:
         income=income,
         expense=expense,
         balance=float(income - expense),
-        budget=user.monthly_budget,
-        budget_used_pct=_pct(expense, user.monthly_budget),
+        budget=budget,
+        budget_used_pct=_pct(expense, budget),
         previous_expense=previous,
+        previous_income=previous_totals.get(TransactionKind.income, ZERO),
         expense_change_pct=_pct(expense - previous, previous),
         due_total=sum((d.amount for d in to_pay), ZERO),
         overdue_count=sum(1 for d in to_pay if d.state == DueState.overdue),
         transaction_count=len(txs),
-        today_expense=_expense_on(db, user, today),
-        daily_limit=user.daily_limit,
+        today_expense=_expense_on(db, user, today, category_id),
+        daily_limit=user.daily_limit if category_id is None else ZERO,
         by_category=by_category,
-        budgets=budget_statuses(cat_info, by_cat),
-        projection=_projection(user, start, end, today, income, expense, dues),
+        budgets=budget_statuses(budget_categories, by_cat),
+        projection=_projection(budget, start, end, today, income, expense, dues),
         daily=[DailyTotal(date=d, expense=v[0], income=v[1]) for d, v in daily.items()],
         upcoming=upcoming[:UPCOMING_LIMIT],
     )
 
 
-def calendar_month(db: Session, user: User, month: str) -> CalendarMonth:
+def calendar_month(db: Session, user: User, month: str, category_id: int | None = None) -> CalendarMonth:
     start, end = month_range(month)
     today = date.today()
     days = {
         start + timedelta(days=i): CalendarDay(date=start + timedelta(days=i), expense=ZERO, income=ZERO, dues=[])
         for i in range((end - start).days + 1)
     }
-    for t in _month_transactions(db, user, start, end):
+    for t in _month_transactions(db, user, start, end, category_id):
         if t.kind == TransactionKind.expense:
             days[t.date].expense += t.amount
         else:
             days[t.date].income += t.amount
 
     due_date = func.coalesce(Invoice.due_date, Invoice.issue_date)
-    for inv in db.scalars(select(Invoice).where(Invoice.user_id == user.id, due_date.between(start, end))):
+    for inv in db.scalars(select(Invoice).where(
+        Invoice.user_id == user.id, due_date.between(start, end), _category(Invoice.category_id, category_id)
+    )):
         item = _invoice_due(inv, today)
         days[item.date].dues.append(item)  # type: ignore[index]
-    for item in _scheduled_dues(db, user, start, end, today):
+    for item in _scheduled_dues(db, user, start, end, today, category_id):
         days[item.date].dues.append(item)  # type: ignore[index]
-    for item in _card_dues(db, user, today):
-        if item.date and start <= item.date <= end:
-            days[item.date].dues.append(item)
+    if category_id is None:
+        for item in _card_dues(db, user, today):
+            if item.date and start <= item.date <= end:
+                days[item.date].dues.append(item)
     return CalendarMonth(month=month, days=list(days.values()))
 
 
-def year_report(db: Session, user: User, year: int) -> YearReport:
+def yearly_expenses(db: Session, user: User, category_id: int | None = None) -> list[YearExpense]:
+    year = extract("year", Transaction.date)
+    rows = db.execute(
+        select(year, func.sum(Transaction.amount))
+        .where(Transaction.user_id == user.id, Transaction.kind == TransactionKind.expense,
+               _category(Transaction.category_id, category_id))
+        .group_by(year)
+        .order_by(year.desc())
+    )
+    return [YearExpense(year=int(period), expense=total) for period, total in rows]
+
+
+def year_report(db: Session, user: User, year: int, category_id: int | None = None) -> YearReport:
     start, end = date(year, 1, 1), date(year, 12, 31)
     month_col = extract("month", Transaction.date)
     rows = db.execute(
         select(month_col, Transaction.kind, Transaction.category_id, func.sum(Transaction.amount))
-        .where(Transaction.user_id == user.id, Transaction.date.between(start, end))
+        .where(Transaction.user_id == user.id, Transaction.date.between(start, end),
+               _category(Transaction.category_id, category_id))
         .group_by(month_col, Transaction.kind, Transaction.category_id)
     )
     income = [ZERO] * 12
@@ -296,6 +343,15 @@ def year_report(db: Session, user: User, year: int) -> YearReport:
         else:
             expense[i] += amount
             by_cat[cat_id][i] += amount
+    today = date.today()
+    last = 12 if year < today.year else (today.month if year == today.year else 0)
+    # Tanto el promedio general como el de cada categoría usan los mismos meses.
+    first = next((i for i in range(last) if income[i] or expense[i]), last)
+    counted = last - first
+
+    def average(months: list[Decimal]) -> Decimal:
+        return (sum(months[first:last], ZERO) / counted).quantize(Decimal("1")) if counted else ZERO
+
     cat_info = {c.id: c for c in db.scalars(select(Category).where(Category.user_id == user.id))}
     categories = sorted(
         (
@@ -305,19 +361,13 @@ def year_report(db: Session, user: User, year: int) -> YearReport:
                 color=cat_info[cid].color if cid in cat_info else UNCATEGORIZED_COLOR,
                 total=sum(months, ZERO),
                 months=months,
+                average_expense=average(months),
             )
             for cid, months in by_cat.items()
         ),
         key=lambda c: -c.total,
     )
-    today = date.today()
-    last = 12 if year < today.year else (today.month if year == today.year else 0)
-    # El promedio arranca en el primer mes con movimientos: si se empezó a usar la app en
-    # octubre, no tiene sentido dividir por los meses de enero a septiembre.
-    first = next((i for i in range(12) if income[i] or expense[i]), last)
-    counted = max(0, last - first)
     total_in, total_out = sum(income, ZERO), sum(expense, ZERO)
-    spent_counted = sum(expense[first:last], ZERO)
     return YearReport(
         year=year,
         months=[
@@ -330,17 +380,18 @@ def year_report(db: Session, user: User, year: int) -> YearReport:
         income=total_in,
         expense=total_out,
         balance=total_in - total_out,
-        average_expense=(spent_counted / counted).quantize(Decimal("1")) if counted else ZERO,
+        average_expense=average(expense),
         months_counted=counted,
     )
 
 
-def fiscal_report(db: Session, user: User, month: str) -> FiscalReport:
+def fiscal_report(db: Session, user: User, month: str, category_id: int | None = None) -> FiscalReport:
     """Compras del mes para el contador: IVA 10 %, 5 %, exentas y gastos deducibles de IRP."""
     start, end = month_range(month)
     invoices = db.scalars(
         select(Invoice)
-        .where(Invoice.user_id == user.id, Invoice.issue_date.between(start, end))
+        .where(Invoice.user_id == user.id, Invoice.issue_date.between(start, end),
+               _category(Invoice.category_id, category_id))
         .order_by(Invoice.issue_date, Invoice.id)
     )
     rows = [
@@ -427,8 +478,8 @@ def fiscal_csv(report: FiscalReport) -> str:
     return "﻿" + buf.getvalue()
 
 
-def export_csv(db: Session, user: User, month: str | None) -> str:
-    stmt = select(Transaction).where(Transaction.user_id == user.id)
+def export_csv(db: Session, user: User, month: str | None, category_id: int | None = None) -> str:
+    stmt = select(Transaction).where(Transaction.user_id == user.id, _category(Transaction.category_id, category_id))
     if month:
         start, end = month_range(month)
         stmt = stmt.where(Transaction.date.between(start, end))

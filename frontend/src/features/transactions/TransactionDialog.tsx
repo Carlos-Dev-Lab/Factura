@@ -7,7 +7,7 @@ import { Modal } from '../../components/Modal';
 import { useToast } from '../../context/ToastContext';
 import { useActiveAccounts, useCategories, useFinancialMutation } from '../../hooks/queries';
 import { SUGGESTION_SOURCE, useCategorySuggestion } from '../../hooks/useSuggestion';
-import { PAYMENT_METHODS } from '../../lib/format';
+import { PAYMENT_METHODS, todayIso } from '../../lib/format';
 
 export type TransactionDraft = Partial<TransactionInput> & { id?: number; linked?: 'invoice' | 'scheduled' };
 
@@ -25,11 +25,10 @@ export const toDraft = (t: Transaction): TransactionDraft => ({
 
 interface Props {
   initial: TransactionDraft;
-  defaultDate: string;
   onClose: () => void;
 }
 
-export function TransactionDialog({ initial, defaultDate, onClose }: Props) {
+export function TransactionDialog({ initial, onClose }: Props) {
   const isNew = initial.id === undefined;
   const { data: categories } = useCategories();
   const { data: accounts } = useActiveAccounts();
@@ -37,7 +36,7 @@ export function TransactionDialog({ initial, defaultDate, onClose }: Props) {
   const [form, setForm] = useState<TransactionInput>({
     kind: initial.kind ?? 'expense',
     amount: initial.amount ?? 0,
-    date: initial.date ?? defaultDate,
+    date: initial.date ?? todayIso(),
     description: initial.description ?? '',
     method: initial.method ?? 'cash',
     category_id: initial.category_id ?? null,
@@ -92,7 +91,7 @@ export function TransactionDialog({ initial, defaultDate, onClose }: Props) {
     initial.linked === 'invoice'
       ? 'Es el pago de una factura: el monto y la fecha también se actualizan en la factura.'
       : initial.linked === 'scheduled'
-        ? 'Es el pago de un pago fijo: la fecha tiene que quedar dentro del mismo mes.'
+        ? 'Podés corregir la fecha real del pago. El período de la cuota se conserva.'
         : null;
 
   return (

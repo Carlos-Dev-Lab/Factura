@@ -5,7 +5,7 @@ import { useDialogs } from '../context/DialogsContext';
 import { useMonth } from '../context/MonthContext';
 import { AlertsBell } from '../features/alerts/AlertsPanel';
 import { useLogout } from '../features/auth/useLogout';
-import { monthLabel, monthOf, shiftMonth, todayIso } from '../lib/format';
+import { defaultDayForMonth, isIsoDate, monthLabel, monthOf, shiftMonth, todayIso } from '../lib/format';
 import { Icon, type IconName } from './Icon';
 
 interface NavItem {
@@ -32,15 +32,25 @@ const MOBILE_MORE = [byPath('/facturas'), byPath('/cuentas'), byPath('/reportes'
 
 function MonthSwitcher() {
   const { month, setMonth } = useMonth();
+  const { pathname } = useLocation();
+  const [params, setParams] = useSearchParams();
+  const expensePage = pathname === '/gastos';
+  const day = params.get('dia');
+  const selectedMonth = expensePage && isIsoDate(day) ? monthOf(day) : month;
+  const changeMonth = (next: string) => {
+    if (next === selectedMonth) return;
+    setMonth(next);
+    if (expensePage) setParams({ dia: defaultDayForMonth(next) });
+  };
   return (
     <div className="month-switch" role="group" aria-label="Mes">
-      <button className="icon-btn" onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Mes anterior">
+      <button className="icon-btn" onClick={() => changeMonth(shiftMonth(selectedMonth, -1))} aria-label="Mes anterior">
         <Icon name="left" size={18} stroke={2.4} />
       </button>
-      <button className="month-label" onClick={() => setMonth(monthOf(todayIso()))} title="Volver al mes actual">
-        {monthLabel(month)}
+      <button className="month-label" onClick={() => changeMonth(monthOf(todayIso()))} title="Volver al mes actual">
+        {monthLabel(selectedMonth)}
       </button>
-      <button className="icon-btn" onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Mes siguiente">
+      <button className="icon-btn" onClick={() => changeMonth(shiftMonth(selectedMonth, 1))} aria-label="Mes siguiente">
         <Icon name="right" size={18} stroke={2.4} />
       </button>
     </div>

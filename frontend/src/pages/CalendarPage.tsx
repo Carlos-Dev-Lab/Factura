@@ -6,6 +6,8 @@ import { useDialogs } from '../context/DialogsContext';
 import { useMonth } from '../context/MonthContext';
 import { dueKindLabel, dueStateLabel, PayButton } from '../features/dues/DueList';
 import { useCalendar, useUser } from '../hooks/queries';
+import { useCategoryFilter } from '../hooks/useCategoryFilter';
+import { CategoryFilter } from '../components/CategoryFilter';
 import { formatDate, formatMoney, parseIso, todayIso } from '../lib/format';
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -87,9 +89,19 @@ function DayDetail({ day }: { day: CalendarDay }) {
 }
 
 export function CalendarPage() {
+  const { categoryId, selectCategory } = useCategoryFilter();
+  return (
+    <>
+      <div className="toolbar"><CategoryFilter categoryId={categoryId} onChange={selectCategory} /></div>
+      <CalendarContent categoryId={categoryId} />
+    </>
+  );
+}
+
+function CalendarContent({ categoryId }: { categoryId?: number }) {
   const { month, defaultDay } = useMonth();
   const { currency } = useUser();
-  const calendar = useCalendar(month);
+  const calendar = useCalendar(month, categoryId);
   const [selected, setSelected] = useState(defaultDay);
   const panelRef = useRef<HTMLDivElement>(null);
   const today = todayIso();

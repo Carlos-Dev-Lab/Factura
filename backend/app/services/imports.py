@@ -7,17 +7,20 @@ Dos pasos sin guardar nada en el medio:
 
 import csv
 import io
+import json
 import re
 import zipfile
 from collections import Counter
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from hashlib import sha256
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.errors import PayloadTooLargeError, ValidationError
-from app.models import CategoryKind, Transaction, TransactionKind, User
+from app.models import CategoryKind, ImportBatch, Transaction, TransactionKind, User
 from app.schemas.common import MAX_YEAR, MIN_YEAR, clean_text
 from app.schemas.support import ImportCommit, ImportMapping, ImportPreview, ImportResult, ImportRow
 from app.schemas.transaction import TransactionIn
@@ -71,7 +74,12 @@ def _read_xlsx(content: bytes) -> list[list[str]]:
     wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     try:
         ws = wb.worksheets[0]
-        return [[_cell(c) for c in row] for row in ws.iter_rows(max_row=MAX_ROWS, max_col=MAX_COLS, values_only=True)]
+        rows = []
+        for i, row in enumerate(ws.iter_rows(max_col=MAX_COLS, values_only=True)):
+            if i >= MAX_ROWS:
+                raise ValidationError(f"El archivo tiene más de {MAX_ROWS} filas. Dividilo antes de importar.")
+            rows.append([_cell(c) for c in row])
+        return rows
     finally:
         wb.close()
 
@@ -89,7 +97,7 @@ def _read_csv(content: bytes) -> list[list[str]]:
     rows = []
     for i, row in enumerate(reader):
         if i >= MAX_ROWS:
-            break
+            raise ValidationError(f"El archivo tiene más de {MAX_ROWS} filas. Dividilo antes de importar.")
         rows.append([clean_text(c).strip() for c in row[:MAX_COLS]])
     return rows
 
@@ -177,12 +185,17 @@ def _get(row: list[str], index: int | None) -> str:
 # ---------- Vista previa y confirmación ----------
 
 
-def preview(db: Session, user: User, content: bytes, mapping: ImportMapping | None) -> ImportPreview:
+def preview(
+    db: Session, user: User, content: bytes, mapping: ImportMapping | None, account_id: int | None = None
+) -> ImportPreview:
+    account_id = accounts.resolve(db, user, account_id)
     rows = read_table(content)
     if not rows:
         raise ValidationError("El archivo está vacío")
     mapping = mapping or detect_mapping(rows)
-    width = max(len(r) for r in rows[:HEADER_SCAN_ROWS])
+    width = max(map(len, rows))
+    if mapping and mapping.header_row >= len(rows):
+        raise ValidationError("La fila de encabezados no existe en el archivo")
     header = rows[mapping.header_row] if mapping else []
     columns = [header[i] if i < len(header) and header[i] else f"Columna {i + 1}" for i in range(width)]
     if mapping is None:
@@ -228,26 +241,28 @@ def preview(db: Session, user: User, content: bytes, mapping: ImportMapping | No
                 error=error,
             )
         )
-        if len(parsed) >= PREVIEW_ROWS:
-            break
-    _mark_duplicates(db, user, parsed)
+        if len(parsed) > PREVIEW_ROWS:
+            raise ValidationError(f"Hay más de {PREVIEW_ROWS} movimientos. Dividí el extracto antes de importar.")
+    _mark_duplicates(db, user, parsed, account_id)
     return ImportPreview(columns=columns, mapping=mapping, rows=parsed, skipped=skipped)
 
 
-def _mark_duplicates(db: Session, user: User, rows: list[ImportRow]) -> None:
+def _mark_duplicates(db: Session, user: User, rows: list[ImportRow], account_id: int | None) -> None:
     dated = [r.date for r in rows if r.date]
     if not dated:
         return
     existing = db.execute(
-        select(Transaction.date, Transaction.amount, Transaction.kind).where(
-            Transaction.user_id == user.id, Transaction.date.between(min(dated), max(dated))
+        select(Transaction.date, Transaction.amount, Transaction.kind, Transaction.description).where(
+            Transaction.user_id == user.id,
+            Transaction.account_id == account_id,
+            Transaction.date.between(min(dated), max(dated)),
         )
     )
-    # Se cuenta cuántos hay de cada (fecha, monto, tipo): si el extracto trae dos compras iguales el
+    # Se cuenta cuántos hay con la misma descripción en esa cuenta: si el extracto trae dos compras iguales el
     # mismo día y solo una estaba cargada, se marca una sola como posible repetida.
-    seen = Counter((d, a, k) for d, a, k in existing)
+    seen = Counter((d, a, k, rules.normalize(description)) for d, a, k, description in existing)
     for r in rows:
-        key = (r.date, r.amount, r.kind)
+        key = (r.date, r.amount, r.kind, rules.normalize(r.description))
         if r.date and r.amount is not None and seen[key] > 0:
             r.duplicate = True
             seen[key] -= 1
@@ -255,6 +270,19 @@ def _mark_duplicates(db: Session, user: User, rows: list[ImportRow]) -> None:
 
 def commit(db: Session, user: User, data: ImportCommit) -> ImportResult:
     account_id = accounts.resolve(db, user, data.account_id)
+    rows = sorted(
+        (item.date.isoformat(), f"{item.amount:.2f}", item.kind.value, rules.normalize(item.description))
+        for item in data.items
+    )
+    fingerprint = sha256(json.dumps([account_id, rows], ensure_ascii=False).encode()).hexdigest()
+    # La reserva y los movimientos se confirman juntos. Un reintento concurrente espera
+    # al original y solo crea movimientos si la primera transacción se revirtió.
+    inserted = db.scalar(
+        insert(ImportBatch).values(user_id=user.id, fingerprint=fingerprint)
+        .on_conflict_do_nothing().returning(ImportBatch.fingerprint)
+    )
+    if inserted is None:
+        return ImportResult(created=0, total=Decimal(0))
     total = Decimal(0)
     learned: set[str] = set()
     for item in data.items:

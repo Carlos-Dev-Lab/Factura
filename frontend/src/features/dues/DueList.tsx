@@ -52,7 +52,7 @@ export function DueList({ items, emptyText }: { items: DueItem[]; emptyText: str
   return (
     <ul className="list">
       {items.map((due) => (
-        <li key={`${due.kind}-${due.id}`} className={`item ${due.direction === 'in' ? 'due-in' : ''}`}>
+        <li key={`${due.kind}-${due.id}-${due.date}`} className={`item ${due.direction === 'in' ? 'due-in' : ''}`}>
           <DateBox iso={due.date} overdue={due.state === 'overdue'} />
           <span className="body">
             <b>{due.name}</b>

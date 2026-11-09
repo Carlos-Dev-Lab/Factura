@@ -1,14 +1,17 @@
 import { useState } from 'react';
 
-import { scheduledApi } from '../../api/endpoints';
-import type { ScheduledInput, ScheduledPayment, TransactionKind } from '../../api/types';
+import { scheduledApi, transactionsApi } from '../../api/endpoints';
+import type { ScheduledInput, ScheduledPayment, Transaction, TransactionKind } from '../../api/types';
 import { AccountSelect, CategorySelect, ConfirmDeleteButton, Field, MoneyInput, Switch } from '../../components/fields';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../context/ToastContext';
-import { useFinancialMutation, useUser } from '../../hooks/queries';
-import { formatMoney, monthLabel, monthOf, shiftMonth, todayIso } from '../../lib/format';
+import { useActiveAccounts, useFinancialMutation, useUser } from '../../hooks/queries';
+import { formatMoney, monthLabel, monthOf, parseIso, shiftMonth, todayIso } from '../../lib/format';
 
-export type ScheduledDialogState = { payment: ScheduledPayment } | { dayOfMonth: number; kind?: TransactionKind };
+export type ScheduledDialogState =
+  | { payment: ScheduledPayment }
+  | { dayOfMonth: number; kind?: TransactionKind }
+  | { expense: Transaction };
 
 const monthsBetween = (a: string, b: string) => {
   const [ya = 0, ma = 1] = a.split('-').map(Number);
@@ -20,6 +23,11 @@ export function ScheduledDialog({ state, onClose }: { state: ScheduledDialogStat
   const { currency } = useUser();
   const toast = useToast();
   const existing = 'payment' in state ? state.payment : undefined;
+  const expense = 'expense' in state ? state.expense : undefined;
+  const { data: activeAccounts = [] } = useActiveAccounts();
+  const currentMonth = monthOf(todayIso());
+  const expenseMonth = expense ? monthOf(expense.date) : currentMonth;
+  const earliestStart = expenseMonth > currentMonth ? expenseMonth : currentMonth;
   const [form, setForm] = useState<ScheduledInput>(
     existing
       ? {
@@ -35,15 +43,15 @@ export function ScheduledDialog({ state, onClose }: { state: ScheduledDialogStat
           account_id: existing.account_id,
         }
       : {
-          name: '',
+          name: expense ? (expense.description.trim() || expense.category?.name || 'Pago fijo').slice(0, 80) : '',
           kind: ('kind' in state && state.kind) || 'expense',
-          amount: 0,
+          amount: expense?.amount ?? 0,
           variable_amount: false,
-          day_of_month: 'dayOfMonth' in state ? state.dayOfMonth : 1,
-          start_month: monthOf(todayIso()),
+          day_of_month: expense ? parseIso(expense.date).getDate() : 'dayOfMonth' in state ? state.dayOfMonth : 1,
+          start_month: earliestStart,
           end_month: null,
-          category_id: null,
-          account_id: null,
+          category_id: expense?.category?.id ?? null,
+          account_id: activeAccounts.find((account) => account.id === expense?.account?.id)?.id ?? null,
           active: true,
         },
   );
@@ -52,8 +60,12 @@ export function ScheduledDialog({ state, onClose }: { state: ScheduledDialogStat
   const isIncome = form.kind === 'income';
 
   const save = useFinancialMutation(
-    (data: ScheduledInput) => (existing ? scheduledApi.update(existing.id, data) : scheduledApi.create(data)),
-    isIncome ? 'Cobro fijo guardado' : 'Pago fijo guardado',
+    (data: ScheduledInput) => {
+      if (expense) return transactionsApi.schedule(expense.id, data);
+      if (existing) return scheduledApi.update(existing.id, data);
+      return scheduledApi.create(data);
+    },
+    expense ? 'Pago fijo creado' : isIncome ? 'Cobro fijo guardado' : 'Pago fijo guardado',
   );
   const remove = useFinancialMutation(() => scheduledApi.remove(existing!.id), 'Pago fijo eliminado');
 
@@ -61,6 +73,7 @@ export function ScheduledDialog({ state, onClose }: { state: ScheduledDialogStat
     set('end_month', n > 0 ? shiftMonth(form.start_month, Math.min(n, 360) - 1) : null);
 
   const submit = () => {
+    if (save.isPending) return;
     if (form.amount <= 0) return toast('Ingresá un monto mayor a cero');
     if (form.end_month && form.end_month < form.start_month) return toast('La última cuota no puede ser antes de la primera');
     save.mutate(form, { onSuccess: onClose });
@@ -68,7 +81,11 @@ export function ScheduledDialog({ state, onClose }: { state: ScheduledDialogStat
 
   return (
     <Modal
-      title={existing ? (isIncome ? 'Editar cobro fijo' : 'Editar pago fijo') : isIncome ? 'Nuevo cobro fijo' : 'Nuevo pago fijo'}
+      title={
+        expense
+          ? 'Convertir gasto en pago fijo'
+          : `${existing ? 'Editar' : 'Nuevo'} ${isIncome ? 'cobro fijo' : 'pago fijo'}`
+      }
       onClose={onClose}
       onSubmit={submit}
       footer={
@@ -78,24 +95,31 @@ export function ScheduledDialog({ state, onClose }: { state: ScheduledDialogStat
             Cancelar
           </button>
           <button className="btn mint" disabled={save.isPending}>
-            Guardar
+            {expense ? 'Crear pago fijo' : 'Guardar'}
           </button>
         </>
       }
     >
-      <div className="tabs-type" role="group" aria-label="Tipo">
-        {(['expense', 'income'] as const).map((k) => (
-          <button
-            key={k}
-            type="button"
-            className={`${k} ${form.kind === k ? 'on' : ''}`}
-            aria-pressed={form.kind === k}
-            onClick={() => setForm((f) => ({ ...f, kind: k, category_id: null }))}
-          >
-            {k === 'expense' ? 'Pago (gasto)' : 'Cobro (ingreso)'}
-          </button>
-        ))}
-      </div>
+      {expense ? (
+        <p className="hint">
+          El gasto original queda en el historial de pagos de {monthLabel(expenseMonth).toLowerCase()}.
+          Los cambios de este formulario se aplican a la programación mensual.
+        </p>
+      ) : (
+        <div className="tabs-type" role="group" aria-label="Tipo">
+          {(['expense', 'income'] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              className={`${k} ${form.kind === k ? 'on' : ''}`}
+              aria-pressed={form.kind === k}
+              onClick={() => setForm((f) => ({ ...f, kind: k, category_id: null }))}
+            >
+              {k === 'expense' ? 'Pago (gasto)' : 'Cobro (ingreso)'}
+            </button>
+          ))}
+        </div>
+      )}
       <Field label="Nombre">
         <input
           required
@@ -146,6 +170,7 @@ export function ScheduledDialog({ state, onClose }: { state: ScheduledDialogStat
           <input
             type="month"
             required
+            min={expense ? earliestStart : undefined}
             value={form.start_month}
             onChange={(e) => {
               const start = e.target.value;

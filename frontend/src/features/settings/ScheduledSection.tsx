@@ -1,24 +1,29 @@
 import { scheduledApi } from '../../api/endpoints';
+import { CategoryFilter } from '../../components/CategoryFilter';
 import { Switch } from '../../components/fields';
 import { Icon } from '../../components/Icon';
 import { Loading } from '../../components/Loading';
 import { useDialogs } from '../../context/DialogsContext';
 import { useFinancialMutation, useScheduled, useUser } from '../../hooks/queries';
-import { formatMoney, monthLabel, tint } from '../../lib/format';
+import { useCategoryFilter } from '../../hooks/useCategoryFilter';
+import { formatMoney, monthLabel, monthOf, tint, todayIso } from '../../lib/format';
 import { SectionHeader } from './SectionHeader';
 
 export function ScheduledSection() {
   const { currency } = useUser();
   const { openScheduled } = useDialogs();
   const scheduled = useScheduled();
+  const { categoryId, selectCategory } = useCategoryFilter();
   const toggle = useFinancialMutation(({ id, active }: { id: number; active: boolean }) =>
     scheduledApi.update(id, { active }),
   );
 
-  const items = scheduled.data ?? [];
+  const items = (scheduled.data ?? []).filter((item) => categoryId === undefined || item.category?.id === categoryId);
   const active = items.filter((s) => s.active);
-  const monthly = active.filter((s) => s.kind === 'expense').reduce((sum, s) => sum + s.amount, 0);
-  const incomes = active.filter((s) => s.kind === 'income').reduce((sum, s) => sum + s.amount, 0);
+  const month = monthOf(todayIso());
+  const current = active.filter((s) => s.start_month <= month && (!s.end_month || s.end_month >= month));
+  const monthly = current.filter((s) => s.kind === 'expense').reduce((sum, s) => sum + s.amount, 0);
+  const incomes = current.filter((s) => s.kind === 'income').reduce((sum, s) => sum + s.amount, 0);
 
   return (
     <section className="card">
@@ -36,18 +41,19 @@ export function ScheduledSection() {
           </div>
         }
       />
+      <div className="toolbar"><CategoryFilter categoryId={categoryId} onChange={selectCategory} /></div>
       {!scheduled.data ? (
         <Loading error={scheduled.error} />
       ) : items.length ? (
         <>
           <div className="stat-strip">
             <div>
-              <small>Pagos por mes</small>
+              <small>Pagos programados este mes</small>
               <b>{formatMoney(monthly, currency)}</b>
             </div>
             {incomes > 0 && (
               <div>
-                <small>Cobros por mes</small>
+                <small>Cobros programados este mes</small>
                 <b className="pos">{formatMoney(incomes, currency)}</b>
               </div>
             )}
@@ -95,8 +101,13 @@ export function ScheduledSection() {
                     onChange={(value) => toggle.mutate({ id: s.id, active: value })}
                   />
                 </span>
-                <button className="icon-btn" onClick={() => openScheduled({ payment: s })} aria-label={`Editar ${s.name}`}>
-                  <Icon name="edit" size={16} />
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={() => openScheduled({ payment: s })}
+                  aria-label={`Editar ${s.name}`}
+                >
+                  <Icon name="edit" size={16} /> Editar
                 </button>
               </li>
             ))}

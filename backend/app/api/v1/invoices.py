@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from app.api.deps import DB, CurrentUser, PathId, Storage, verify_csrf
 from app.core.config import get_settings
 from app.models import Invoice
+from app.schemas.common import RefId
 from app.schemas.invoice import (
     FILE_KEY_PATTERN,
     InvoiceDraft,
@@ -26,8 +27,9 @@ def list_invoices(
     db: DB,
     status_filter: InvoiceFilter | None = Query(None, alias="status"),
     q: str | None = Query(None, max_length=80),
+    category_id: RefId | None = None,
 ) -> list[Invoice]:
-    return invoices.list_invoices(db, user, status_filter, q)
+    return invoices.list_invoices(db, user, status_filter, q, category_id)
 
 
 @router.post("/analyze", response_model=InvoiceDraft)

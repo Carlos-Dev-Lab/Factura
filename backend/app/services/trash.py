@@ -195,25 +195,28 @@ def _restore_transaction(db: Session, user: User, row: dict[str, Any]) -> None:
         name = invoice.supplier or "la factura"
         raise ConflictError(f"{name} ya tiene otro pago registrado: restaurar este lo duplicaría.")
     sp_id = row.get("scheduled_payment_id")
-    if not _exists(db, ScheduledPayment, sp_id, user):
+    sp = fetch(db, ScheduledPayment, sp_id, lock=True) if sp_id else None
+    if not sp or sp.user_id != user.id:
         row["scheduled_payment_id"] = None
+        row["scheduled_month"] = None
     else:
-        day = dt.date.fromisoformat(row["date"])
-        first = day.replace(day=1)
+        first = dt.date.fromisoformat(row.get("scheduled_month") or row["date"]).replace(day=1)
         last = (first + dt.timedelta(days=32)).replace(day=1) - dt.timedelta(days=1)
+        row["scheduled_month"] = first.isoformat()
         repaid = db.scalar(
             select(Transaction.id).where(
                 Transaction.user_id == user.id,
                 Transaction.scheduled_payment_id == sp_id,
-                Transaction.date.between(first, last),
-            )
+                (Transaction.scheduled_month == first) | (
+                    Transaction.scheduled_month.is_(None) & Transaction.date.between(first, last)
+                ),
+            ).limit(1)
         )
         if repaid:
             from app.services.alerts import MONTH_NAMES  # import local: alerts depende de muchos servicios
 
-            sp = db.get(ScheduledPayment, sp_id)
             raise ConflictError(
-                f"«{sp.name}» ya tiene un pago registrado en {MONTH_NAMES[first.month - 1]}: "  # type: ignore[union-attr]
+                f"«{sp.name}» ya tiene un pago registrado en {MONTH_NAMES[first.month - 1]}: "
                 "restaurar este lo duplicaría."
             )
     _insert(db, Transaction, row)

@@ -8,6 +8,8 @@ import { Icon } from '../components/Icon';
 import { Loading } from '../components/Loading';
 import { useDialogs } from '../context/DialogsContext';
 import { useFiscalReport, useInvoices, useUser } from '../hooks/queries';
+import { useCategoryFilter } from '../hooks/useCategoryFilter';
+import { CategoryFilter } from '../components/CategoryFilter';
 import { formatDate, formatMoney, monthLabel, monthOf, relativeDay, shiftMonth, todayIso } from '../lib/format';
 
 const FILTERS: { value: InvoiceFilter | undefined; label: string }[] = [
@@ -165,12 +167,12 @@ function InvoiceTable({ items }: { items: Invoice[] }) {
   );
 }
 
-function FiscalSection() {
+function FiscalSection({ categoryId }: { categoryId?: number }) {
   const { currency } = useUser();
   const { openInvoice } = useDialogs();
   // Por defecto el mes anterior: es el que se declara.
   const [month, setMonth] = useState(() => shiftMonth(monthOf(todayIso()), -1));
-  const report = useFiscalReport(month);
+  const report = useFiscalReport(month, categoryId);
   const money = (v: number) => formatMoney(v, currency);
 
   return (
@@ -179,6 +181,7 @@ function FiscalSection() {
         <div>
           <h2>Para el contador</h2>
           <p className="muted">Compras del mes por fecha de emisión, con IVA 10 %, 5 %, exentas y gastos deducibles de IRP.</p>
+          {categoryId !== undefined && <p className="hint">Los totales y las descargas se limitan a la categoría seleccionada.</p>}
         </div>
         <Field label="Mes">
           <input type="month" value={month} max={monthOf(todayIso())} onChange={(e) => e.target.value && setMonth(e.target.value)} />
@@ -280,10 +283,10 @@ function FiscalSection() {
             </div>
           )}
           <div className="row-actions start spaced">
-            <a className="btn" href={reportsApi.fiscalCsvUrl(month)}>
+            <a className="btn" href={reportsApi.fiscalCsvUrl(month, categoryId)}>
               <Icon name="download" size={18} /> Planilla (CSV)
             </a>
-            <a className="btn mint" href={reportsApi.fiscalZipUrl(month)}>
+            <a className="btn mint" href={reportsApi.fiscalZipUrl(month, categoryId)}>
               <Icon name="download" size={18} /> Paquete con archivos (ZIP)
             </a>
           </div>
@@ -300,28 +303,38 @@ function FiscalSection() {
 export function InvoicesPage() {
   const [params, setParams] = useSearchParams();
   const tab = params.get('vista') === 'contador' ? 'contador' : 'facturas';
+  const { categoryId, selectCategory } = useCategoryFilter('expense');
   const [filter, setFilter] = useState<InvoiceFilter | undefined>();
   const [search, setSearch] = useState('');
   const q = useDeferredValue(search.trim());
-  const invoices = useInvoices(filter, q || undefined);
+  const invoices = useInvoices(filter, q || undefined, categoryId);
+  const selectTab = (view: 'facturas' | 'contador') => {
+    const next = new URLSearchParams(params);
+    if (view === 'contador') next.set('vista', view);
+    else next.delete('vista');
+    setParams(next, { replace: true });
+  };
 
   return (
     <div className="stack">
-      <div className="seg" role="tablist" aria-label="Vista">
-        <button role="tab" aria-selected={tab === 'facturas'} className={tab === 'facturas' ? 'on' : ''} onClick={() => setParams({}, { replace: true })}>
-          Facturas
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === 'contador'}
-          className={tab === 'contador' ? 'on' : ''}
-          onClick={() => setParams({ vista: 'contador' }, { replace: true })}
-        >
-          Para el contador
-        </button>
+      <div className="toolbar">
+        <div className="seg" role="tablist" aria-label="Vista">
+          <button role="tab" aria-selected={tab === 'facturas'} className={tab === 'facturas' ? 'on' : ''} onClick={() => selectTab('facturas')}>
+            Facturas
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === 'contador'}
+            className={tab === 'contador' ? 'on' : ''}
+            onClick={() => selectTab('contador')}
+          >
+            Para el contador
+          </button>
+        </div>
+        <CategoryFilter kind="expense" categoryId={categoryId} onChange={selectCategory} />
       </div>
       {tab === 'contador' ? (
-        <FiscalSection />
+        <FiscalSection categoryId={categoryId} />
       ) : (
         <>
           <DropZone />

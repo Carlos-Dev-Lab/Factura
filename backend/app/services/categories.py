@@ -30,7 +30,17 @@ def seed_defaults(db: Session, user: User) -> None:
 
 
 def list_categories(db: Session, user: User) -> list[Category]:
-    return list(db.scalars(select(Category).where(Category.user_id == user.id).order_by(Category.kind, Category.id)))
+    return list(db.scalars(select(Category).where(Category.user_id == user.id).order_by(Category.kind, Category.sort_order.asc().nulls_last(), Category.id)))
+
+
+def reorder(db: Session, user: User, kind: CategoryKind, ids: list[int]) -> None:
+    items = list(db.scalars(select(Category).where(Category.user_id == user.id, Category.kind == kind).with_for_update()))
+    if len(ids) != len(items) or set(ids) != {item.id for item in items}:
+        raise ValidationError("La lista de categorías cambió; actualizá y volvé a intentar")
+    positions = {category_id: index for index, category_id in enumerate(ids)}
+    for item in items:
+        item.sort_order = positions[item.id]
+    db.flush()
 
 
 def get_owned(db: Session, user: User, category_id: int, *, lock: bool = False) -> Category:

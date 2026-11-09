@@ -55,9 +55,10 @@ class Projection(BaseModel):
 
     pending_income: Amount
     pending_expense: Amount
+    card_payments: Amount
     projected_balance: Amount
     days_left: int
-    # Cuánto se puede gastar por día sin quedar en rojo (None si el mes ya pasó).
+    # Margen diario del resultado proyectado, sin considerar saldos de otros meses.
     daily_allowance: Amount | None
     # Cuánto por día para no pasarse del presupuesto mensual (None si no hay presupuesto).
     budget_daily_allowance: Amount | None
@@ -77,6 +78,7 @@ class MonthSummary(BaseModel):
     budget: Amount
     budget_used_pct: float | None
     previous_expense: Amount
+    previous_income: Amount
     expense_change_pct: float | None
     due_total: Amount
     overdue_count: int
@@ -88,6 +90,11 @@ class MonthSummary(BaseModel):
     projection: Projection
     daily: list[DailyTotal]
     upcoming: list[DueItem]
+
+
+class YearExpense(BaseModel):
+    year: int
+    expense: Amount
 
 
 class CalendarDay(BaseModel):
@@ -115,6 +122,7 @@ class CategoryYear(BaseModel):
     color: str
     total: Amount
     months: list[Amount]
+    average_expense: Amount
 
 
 class YearReport(BaseModel):

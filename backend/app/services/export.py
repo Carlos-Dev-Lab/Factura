@@ -20,6 +20,7 @@ from app.models import (
     ScheduledPayment,
     Transaction,
     Transfer,
+    TrashItem,
     User,
 )
 from app.services import reports
@@ -54,7 +55,12 @@ def full_export(db: Session, user: User, storage: LocalStorage) -> Path:
 
     data = {
         "exported_at": datetime.now(UTC).isoformat(),
-        "user": {"email": user.email, "name": user.name, "currency": user.currency},
+        "user": {
+            "email": user.email, "name": user.name, "currency": user.currency,
+            "monthly_budget": str(user.monthly_budget), "daily_limit": str(user.daily_limit),
+            "notifications_enabled": user.notifications_enabled, "notify_hour": user.notify_hour,
+            "notify_days_before": user.notify_days_before,
+        },
         "categories": rows(Category),
         "accounts": rows(Account),
         "transactions": rows(Transaction),
@@ -62,22 +68,30 @@ def full_export(db: Session, user: User, storage: LocalStorage) -> Path:
         "invoices": rows(Invoice),
         "scheduled_payments": rows(ScheduledPayment),
         "category_rules": rows(CategoryRule),
+        "trash": rows(TrashItem),
+        "missing_attachments": [],
     }
     path, zf = _temp_zip()
     with zf:
-        zf.writestr("datos.json", json.dumps(data, ensure_ascii=False, indent=2))
         zf.writestr("movimientos.csv", reports.export_csv(db, user, None))
         for inv in db.scalars(select(Invoice).where(Invoice.user_id == user.id, Invoice.file_key.is_not(None))):
             try:
                 zf.write(storage.path(user.id, inv.file_key), f"facturas/{_invoice_filename(inv)}")  # type: ignore[arg-type]
             except NotFoundError:
-                continue
+                data["missing_attachments"].append(f"factura:{inv.id}")
+        for item in data["trash"]:
+            if key := item.get("file_key"):
+                try:
+                    zf.write(storage.path(user.id, key), f"papelera/{item['id']}_{key}")
+                except NotFoundError:
+                    data["missing_attachments"].append(f"papelera:{item['id']}")
+        zf.writestr("datos.json", json.dumps(data, ensure_ascii=False, indent=2))
     return path
 
 
-def fiscal_zip(db: Session, user: User, storage: LocalStorage, month: str) -> Path:
+def fiscal_zip(db: Session, user: User, storage: LocalStorage, month: str, category_id: int | None = None) -> Path:
     """Paquete para el contador: planilla del mes y los archivos de esas facturas."""
-    report = reports.fiscal_report(db, user, month)
+    report = reports.fiscal_report(db, user, month, category_id)
     path, zf = _temp_zip()
     with zf:
         zf.writestr(f"compras_{month}.csv", reports.fiscal_csv(report))

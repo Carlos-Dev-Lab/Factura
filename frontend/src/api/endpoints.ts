@@ -60,6 +60,7 @@ export const GOOGLE_LOGIN_URL = '/api/v1/auth/google/start';
 
 export const categoriesApi = {
   list: () => request<Category[]>('/categories'),
+  reorder: (data: { kind: TransactionKind; ids: number[] }) => request<void>('/categories/order', 'PUT', data),
   create: (data: Omit<Category, 'id' | 'monthly_budget'> & { monthly_budget?: number | null }) =>
     request<Category>('/categories', 'POST', data),
   update: (id: number, data: Partial<Pick<Category, 'name' | 'color' | 'monthly_budget'>>) =>
@@ -87,6 +88,7 @@ export const transactionsApi = {
   list: (f: TransactionFilters) => request<TransactionPage>(`/transactions${query({ ...f })}`),
   create: (data: TransactionInput) => request<Transaction>('/transactions', 'POST', data),
   update: (id: number, data: Partial<TransactionInput>) => request<Transaction>(`/transactions/${id}`, 'PATCH', data),
+  schedule: (id: number, data: ScheduledInput) => request<ScheduledPayment>(`/transactions/${id}/schedule`, 'POST', data),
   remove: (id: number) => request<Deleted>(`/transactions/${id}`, 'DELETE'),
 };
 
@@ -97,7 +99,8 @@ export interface PayOptions {
 }
 
 export const invoicesApi = {
-  list: (status?: InvoiceFilter, q?: string) => request<Invoice[]>(`/invoices${query({ status, q })}`),
+  list: (status?: InvoiceFilter, q?: string, category_id?: number) =>
+    request<Invoice[]>(`/invoices${query({ status, q, category_id })}`),
   analyze: (file: File) => {
     const fd = new FormData();
     fd.append('file', file);
@@ -143,13 +146,16 @@ export const accountsApi = {
 };
 
 export const reportsApi = {
-  summary: (month: string) => request<MonthSummary>(`/reports/summary${query({ month })}`),
-  calendar: (month: string) => request<{ month: string; days: CalendarDay[] }>(`/reports/calendar${query({ month })}`),
-  year: (year: number) => request<YearReport>(`/reports/year${query({ year })}`),
-  fiscal: (month: string) => request<FiscalReport>(`/reports/fiscal${query({ month })}`),
-  fiscalCsvUrl: (month: string) => `/api/v1/reports/fiscal.csv${query({ month })}`,
-  fiscalZipUrl: (month: string) => `/api/v1/reports/fiscal.zip${query({ month })}`,
-  exportUrl: (month?: string) => `/api/v1/reports/export.csv${query({ month })}`,
+  summary: (month: string, category_id?: number) => request<MonthSummary>(`/reports/summary${query({ month, category_id })}`),
+  calendar: (month: string, category_id?: number) =>
+    request<{ month: string; days: CalendarDay[] }>(`/reports/calendar${query({ month, category_id })}`),
+  year: (year: number, category_id?: number) => request<YearReport>(`/reports/year${query({ year, category_id })}`),
+  yearlyExpenses: (category_id?: number) =>
+    request<{ year: number; expense: number }[]>(`/reports/expenses/yearly${query({ category_id })}`),
+  fiscal: (month: string, category_id?: number) => request<FiscalReport>(`/reports/fiscal${query({ month, category_id })}`),
+  fiscalCsvUrl: (month: string, category_id?: number) => `/api/v1/reports/fiscal.csv${query({ month, category_id })}`,
+  fiscalZipUrl: (month: string, category_id?: number) => `/api/v1/reports/fiscal.zip${query({ month, category_id })}`,
+  exportUrl: (month?: string, category_id?: number) => `/api/v1/reports/export.csv${query({ month, category_id })}`,
   fullExportUrl: () => '/api/v1/export/full.zip',
 };
 
@@ -179,10 +185,11 @@ export const dataApi = {
   removeFromTrash: (id: number) => request<void>(`/trash/${id}`, 'DELETE'),
   emptyTrash: () => request<void>('/trash', 'DELETE'),
   backups: () => request<Backup[]>('/system/backups'),
-  importPreview: (file: File, mapping?: ImportMapping) => {
+  importPreview: (file: File, mapping?: ImportMapping, accountId?: number | null) => {
     const fd = new FormData();
     fd.append('file', file);
     if (mapping) fd.append('mapping', JSON.stringify(mapping));
+    if (accountId != null) fd.append('account_id', String(accountId));
     return request<ImportPreview>('/imports/preview', 'POST', fd);
   },
   importCommit: (account_id: number | null, items: ImportItem[]) =>

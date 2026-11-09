@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 
 import type { Category, TransactionKind } from '../api/types';
 import { useActiveAccounts, useCategories, useUser } from '../hooks/queries';
@@ -48,26 +48,48 @@ export function MoneyInput({ label, value, onChange, autoFocus, hint }: MoneyInp
 }
 
 interface CategorySelectProps {
-  kind: TransactionKind;
+  kind?: TransactionKind;
   value: number | null;
   onChange: (id: number | null) => void;
   hint?: string;
+  emptyLabel?: string;
 }
 
-export function CategorySelect({ kind, value, onChange, hint }: CategorySelectProps) {
+export function CategorySelect({ kind, value, onChange, hint, emptyLabel = 'Sin categoría' }: CategorySelectProps) {
   const { data = [] } = useCategories();
-  const options = data.filter((c: Category) => c.kind === kind);
+  const options = data.filter((c: Category) => !kind || c.kind === kind);
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [active, setActive] = useState(0);
+  const selected = options.find((c) => c.id === value);
+  const matches = options.filter((c) => c.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const choices = query.trim() ? matches : [{ id: null, name: emptyLabel }, ...matches];
+  const choose = (id: number | null) => { onChange(id); setOpen(false); setQuery(''); setActive(0); };
   return (
-    <Field label="Categoría" hint={hint}>
-      <select value={value ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}>
-        <option value="">Sin categoría</option>
-        {options.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </select>
-    </Field>
+    <div className="f category-field" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) { setOpen(false); setQuery(''); } }}>
+      <label htmlFor={id}>Categoría</label>
+      <div className="category-combobox">
+        <input id={id} role="combobox" aria-expanded={open} aria-controls={`${id}-list`} aria-autocomplete="list"
+          aria-activedescendant={open && choices[active] ? `${id}-option-${active}` : undefined}
+          autoComplete="off" placeholder="Buscar categoría" value={open ? query : (selected?.name ?? emptyLabel)}
+          onFocus={() => { setOpen(true); setQuery(''); setActive(0); }}
+          onClick={() => setOpen(true)}
+          onChange={(e) => { setQuery(e.target.value); setActive(0); setOpen(true); }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setActive((n) => Math.max(0, Math.min(n + 1, choices.length - 1))); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((n) => Math.max(n - 1, 0)); }
+            else if (e.key === 'Enter' && open) { e.preventDefault(); if (choices[active]) choose(choices[active].id); }
+            else if (e.key === 'Escape' && open) { e.preventDefault(); e.stopPropagation(); setOpen(false); setQuery(''); }
+          }} />
+        {open && <ul id={`${id}-list`} role="listbox" className="category-options">
+          {choices.map((c, i) => <li key={c.id ?? 'none'} id={`${id}-option-${i}`} role="option" aria-selected={value === c.id}
+            className={i === active ? 'active' : ''} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(c.id)}>{c.name}</li>)}
+          {matches.length === 0 && <li className="category-empty">Sin resultados</li>}
+        </ul>}
+      </div>
+      {hint && <span className="hint">{hint}</span>}
+    </div>
   );
 }
 

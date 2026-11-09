@@ -11,6 +11,7 @@ from starlette.background import BackgroundTask
 from app.api.deps import DB, CurrentUser, PathId, Storage, verify_csrf
 from app.core.errors import ForbiddenError, ValidationError
 from app.models import TrashItem
+from app.schemas.common import RefId
 from app.schemas.support import (
     BackupOut,
     ImportCommit,
@@ -54,7 +55,8 @@ def empty_trash(user: CurrentUser, db: DB, storage: Storage) -> None:
 
 @router.post("/imports/preview", response_model=ImportPreview)
 def import_preview(
-    user: CurrentUser, db: DB, file: UploadFile = File(...), mapping: str | None = Form(None)
+    user: CurrentUser, db: DB, file: UploadFile = File(...), mapping: str | None = Form(None),
+    account_id: RefId | None = Form(None),
 ) -> ImportPreview:
     chosen = None
     if mapping:
@@ -63,7 +65,7 @@ def import_preview(
         except (json.JSONDecodeError, PydanticValidationError) as exc:
             raise ValidationError("Columnas elegidas inválidas") from exc
     content = file.file.read(imports.MAX_IMPORT_BYTES + 1)
-    return imports.preview(db, user, content, chosen)
+    return imports.preview(db, user, content, chosen, account_id)
 
 
 @router.post("/imports/commit", response_model=ImportResult, status_code=status.HTTP_201_CREATED)

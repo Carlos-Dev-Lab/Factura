@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import or_, select
@@ -29,8 +30,12 @@ def label(inv: Invoice) -> str:
     return " ".join(p for p in (inv.supplier or "Factura", inv.number) if p)
 
 
-def list_invoices(db: Session, user: User, status: InvoiceFilter | None, q: str | None) -> list[Invoice]:
+def list_invoices(
+    db: Session, user: User, status: InvoiceFilter | None, q: str | None, category_id: int | None = None
+) -> list[Invoice]:
     stmt = select(Invoice).where(Invoice.user_id == user.id)
+    if category_id is not None:
+        stmt = stmt.where(Invoice.category_id == category_id)
     if status == InvoiceFilter.paid:
         stmt = stmt.where(Invoice.status == InvoiceStatus.paid)
     elif status == InvoiceFilter.pending:
@@ -198,7 +203,7 @@ def create(db: Session, user: User, storage: LocalStorage, data: InvoiceIn) -> I
         notes=data.notes,
         file_key=data.file_key,
     )
-    _check_taxes(inv)
+    check_taxes(inv)
     db.add(inv)
     db.flush()
     rules.learn_from_invoice(db, user, inv.ruc, category_id)
@@ -208,9 +213,16 @@ def create(db: Session, user: User, storage: LocalStorage, data: InvoiceIn) -> I
     return inv
 
 
-def _check_taxes(inv: Invoice) -> None:
-    if inv.iva10 + inv.iva5 + inv.exempt > inv.total and inv.total > 0:
+def check_taxes(inv: Invoice, *, total: Decimal | None = None) -> None:
+    total = inv.total if total is None else total
+    if inv.iva10 + inv.iva5 + inv.exempt > total:
         raise ValidationError("El IVA y las exentas no pueden superar el total de la factura")
+    # Una liquidación de IVA redondeada al guaraní puede desviar la base reconstruida
+    # hasta medio guaraní de IVA por tasa. Las tasas ausentes no aportan tolerancia.
+    tolerance = (Decimal("5.5") if inv.iva10 else 0) + (Decimal("10.5") if inv.iva5 else 0)
+    gross = inv.iva10 * 11 + inv.iva5 * 21 + inv.exempt
+    if gross > total + tolerance:
+        raise ValidationError("Los importes gravados que resultan del IVA y las exentas superan el total")
 
 
 def linked_payment(db: Session, invoice_id: int) -> Transaction | None:
@@ -225,7 +237,8 @@ def update(db: Session, user: User, invoice_id: int, data: InvoiceUpdate) -> Inv
             inv.category_id = categories.resolve(db, user, value, CategoryKind.expense)
         elif value is not None or field in ("issue_date", "due_date", "cdc"):
             setattr(inv, field, value.strip() if isinstance(value, str) and field != "notes" else value)
-    _check_taxes(inv)
+    if changes.keys() & {"total", "iva10", "iva5", "exempt"}:
+        check_taxes(inv)
     if "category_id" in changes or "ruc" in changes:
         rules.learn_from_invoice(db, user, inv.ruc, inv.category_id)
     if payment := linked_payment(db, inv.id):

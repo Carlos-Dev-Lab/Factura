@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, status
 
 from app.api.deps import DB, CurrentUser, PathId, verify_csrf
 from app.models import Category, CategoryKind, CategoryRule
-from app.schemas.category import CategoryIn, CategoryOut, CategoryUpdate
+from app.schemas.category import CategoryIn, CategoryOrder, CategoryOut, CategoryUpdate
 from app.schemas.support import DeletedOut, RuleIn, RuleOut, SuggestionOut
 from app.services import categories, rules
 
@@ -44,6 +44,11 @@ def create_rule(data: RuleIn, user: CurrentUser, db: DB) -> CategoryRule:
 @router.delete("/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_rule(rule_id: PathId, user: CurrentUser, db: DB) -> None:
     rules.delete_rule(db, user, rule_id)
+
+
+@router.put("/order", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_categories(data: CategoryOrder, user: CurrentUser, db: DB) -> None:
+    categories.reorder(db, user, data.kind, data.ids)
 
 
 @router.patch("/{category_id}", response_model=CategoryOut)

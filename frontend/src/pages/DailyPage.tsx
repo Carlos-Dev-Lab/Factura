@@ -1,8 +1,9 @@
-import { useDeferredValue, useEffect, useState } from 'react';
+import { useDeferredValue, useEffect, useState, type CSSProperties } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { reportsApi, transactionsApi } from '../api/endpoints';
 import type { PaymentMethod, TransactionKind } from '../api/types';
+import { CategoryFilter } from '../components/CategoryFilter';
 import { AccountSelect, Field, MoneyInput } from '../components/fields';
 import { Icon } from '../components/Icon';
 import { Loading } from '../components/Loading';
@@ -11,14 +12,16 @@ import { useMonth } from '../context/MonthContext';
 import { useToast } from '../context/ToastContext';
 import { ImportDialog } from '../features/imports/ImportDialog';
 import { TransactionList } from '../features/transactions/TransactionList';
-import { useActiveAccounts, useCategories, useFinancialMutation, useTransactions, useUser } from '../hooks/queries';
+import { useActiveAccounts, useCategories, useFinancialMutation, useSummary, useTransactions, useUser, useYearlyExpenses, useYearReport } from '../hooks/queries';
+import { useCategoryFilter } from '../hooks/useCategoryFilter';
 import { SUGGESTION_SOURCE, useCategorySuggestion } from '../hooks/useSuggestion';
 import {
+  defaultDayForMonth,
   formatDate,
   formatMoney,
   isIsoDate,
-  isoDate,
   monthBounds,
+  monthLabel,
   monthOf,
   parseIso,
   PAYMENT_METHODS,
@@ -28,15 +31,6 @@ const STRIP_DAYS = 7;
 const MONTH_LIST_LIMIT = 200;
 // Máximo que devuelve la API: el total del día se calcula con todos sus movimientos.
 const DAY_LIST_LIMIT = 500;
-
-function weekAround(iso: string): string[] {
-  const center = parseIso(iso);
-  return Array.from({ length: STRIP_DAYS }, (_, i) => {
-    const d = new Date(center);
-    d.setDate(center.getDate() + i - Math.floor(STRIP_DAYS / 2));
-    return isoDate(d);
-  });
-}
 
 function QuickAdd({ day }: { day: string }) {
   const { data: categories = [] } = useCategories();
@@ -140,12 +134,13 @@ function QuickAdd({ day }: { day: string }) {
   );
 }
 
-function MonthList({ month }: { month: string }) {
+function MonthList({ month, categoryId }: { month: string; categoryId?: number }) {
   const { currency } = useUser();
   const { openTransaction } = useDialogs();
-  const { defaultDay } = useMonth();
   const { data: accounts = [] } = useActiveAccounts();
   const [params, setParams] = useSearchParams();
+  const viewParam = params.get('vista');
+  const view = viewParam === 'por-anio' ? 'por-anio' : viewParam === 'por-mes' || viewParam === 'totales' ? 'por-mes' : 'detalle';
   const accountParam = Number(params.get('cuenta')) || undefined;
   const [kind, setKind] = useState<TransactionKind | undefined>();
   const [search, setSearch] = useState('');
@@ -157,6 +152,7 @@ function MonthList({ month }: { month: string }) {
     q: q || undefined,
     limit: MONTH_LIST_LIMIT,
     account_id: accountParam,
+    category_id: categoryId,
   });
 
   const setAccount = (id: number | null) => {
@@ -165,25 +161,48 @@ function MonthList({ month }: { month: string }) {
     else next.delete('cuenta');
     setParams(next, { replace: true });
   };
+  const setView = (selected: typeof view) => {
+    const next = new URLSearchParams(params);
+    if (selected === 'detalle') next.delete('vista');
+    else next.set('vista', selected);
+    setParams(next);
+  };
+  const openMonth = (selected: string) => setParams({ dia: defaultDayForMonth(selected) });
 
   return (
     <section className="card">
       <div className="card-head">
-        <h2>Todo el mes</h2>
+        <h2>Movimientos del mes</h2>
         <div className="row-actions">
-          <button className="btn small" onClick={() => openTransaction({ kind: 'income', date: defaultDay })}>
+          <button className="btn small" onClick={() => openTransaction({ kind: 'income' })}>
             + Ingreso
           </button>
           <button className="btn small" onClick={() => setImporting(true)}>
             <Icon name="upload" size={16} /> Importar extracto
           </button>
-          <a className="btn small" href={reportsApi.exportUrl(month)}>
-            Exportar CSV
-          </a>
+          {view === 'detalle' && <a className="btn small" href={reportsApi.exportUrl(month, categoryId)}>Exportar CSV</a>}
         </div>
       </div>
       <div className="toolbar">
-        <div className="seg" role="group" aria-label="Tipo">
+        <div className="seg" role="group" aria-label="Vista de movimientos">
+          {([
+            { value: 'detalle', label: 'Detalle', description: 'Detalle del mes' },
+            { value: 'por-mes', label: 'Por mes', description: 'Total de gastos por mes' },
+            { value: 'por-anio', label: 'Por año', description: 'Total de gastos por año' },
+          ] as const).map(({ value, label, description }) => (
+            <button
+              type="button"
+              key={value}
+              className={view === value ? 'on' : ''}
+              aria-label={description}
+              aria-pressed={view === value}
+              onClick={() => setView(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {view === 'detalle' && <><div className="seg" role="group" aria-label="Tipo">
           {[
             { v: undefined, l: 'Todos' },
             { v: 'expense' as const, l: 'Gastos' },
@@ -219,8 +238,18 @@ function MonthList({ month }: { month: string }) {
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
+        </>}
       </div>
-      {list.data ? (
+      {view !== 'detalle' ? (
+        <ExpenseTotals
+          key={month.slice(0, 4)}
+          initialYear={Number(month.slice(0, 4))}
+          categoryId={categoryId}
+          byYear={view === 'por-anio'}
+          showMonths={() => setView('por-mes')}
+          openMonth={openMonth}
+        />
+      ) : list.data ? (
         <>
           <div className="list-totals">
             <span>
@@ -230,7 +259,7 @@ function MonthList({ month }: { month: string }) {
               Ingresos <b className="pos">{formatMoney(list.data.income_total, currency)}</b>
             </span>
           </div>
-          <TransactionList items={list.data.items} emptyText="No hay movimientos con estos filtros." />
+          <TransactionList items={list.data.items} emptyText="No hay movimientos con estos filtros." allowSchedule />
           {list.data.total > list.data.items.length && (
             <p className="muted small">
               Se muestran {list.data.items.length} de {list.data.total} movimientos. Usá la búsqueda o el filtro para
@@ -246,24 +275,119 @@ function MonthList({ month }: { month: string }) {
   );
 }
 
+function ExpensePeriod({ label, caption, amount, hasExpenses, onClick }: {
+  label: string;
+  caption: string;
+  amount: string;
+  hasExpenses: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <li>
+      <button type="button" className="item expense-period" onClick={onClick}>
+        <span className="ava" aria-hidden="true"><Icon name="calendar" size={20} /></span>
+        <span className="body">
+          <b>{label}</b>
+          <small>{hasExpenses ? caption : 'Sin gastos'}</small>
+        </span>
+        <span className={`amt ${hasExpenses ? 'neg' : 'muted'}`}>{amount}</span>
+        <span className="period-chevron" aria-hidden="true"><Icon name="right" size={16} /></span>
+      </button>
+    </li>
+  );
+}
+
+function ExpenseTotals({ initialYear, categoryId, byYear, showMonths, openMonth }: {
+  initialYear: number;
+  categoryId?: number;
+  byYear: boolean;
+  showMonths: () => void;
+  openMonth: (month: string) => void;
+}) {
+  const { currency } = useUser();
+  const [year, setYear] = useState(initialYear);
+  const yearly = useYearlyExpenses(categoryId);
+  const monthly = useYearReport(year, categoryId);
+  const years = [...new Set([year, initialYear, ...(yearly.data ?? []).map((row) => row.year)])].sort((a, b) => b - a);
+  const money = (amount: number) => formatMoney(amount, currency);
+
+  return (
+    <>
+      <div className="toolbar">
+        <span className="muted small">{categoryId === undefined ? 'Gastos de todas las cuentas' : 'Gastos de la categoría seleccionada'}</span>
+        {!byYear && years.length > 1 && <label className="search compact-select">
+          <span className="sr">Año de los gastos</span>
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {years.map((option) => <option key={option}>{option}</option>)}
+          </select>
+        </label>}
+      </div>
+      {byYear ? yearly.data ? (
+        yearly.data.length ? <ul className="list" aria-label="Gastos por año">
+          {yearly.data.map((row) => (
+            <ExpensePeriod
+              key={row.year}
+              label={String(row.year)}
+              caption="Gastos del año"
+              amount={money(row.expense)}
+              hasExpenses={row.expense > 0}
+              onClick={() => { setYear(row.year); showMonths(); }}
+            />
+          ))}
+        </ul> : <div className="empty">Todavía no hay gastos registrados.</div>
+      ) : <Loading error={yearly.error} /> : monthly.data ? (
+        <>
+          <div className="list-totals">
+            <span>Total de {year}</span>
+            <b className="neg">{money(monthly.data.expense)}</b>
+          </div>
+          <ul className="list" aria-label="Gastos por mes">
+            {monthly.data.months.map((row) => (
+              <ExpensePeriod
+                key={row.month}
+                label={monthLabel(row.month)}
+                caption="Gastos del mes"
+                amount={money(row.expense)}
+                hasExpenses={row.expense > 0}
+                onClick={() => openMonth(row.month)}
+              />
+            ))}
+          </ul>
+        </>
+      ) : <Loading error={monthly.error} />}
+    </>
+  );
+}
+
 export function DailyPage() {
-  const { month, setMonth, defaultDay } = useMonth();
-  const { currency, daily_limit: limit } = useUser();
+  const { setMonth, defaultDay } = useMonth();
+  const { currency, daily_limit } = useUser();
+  const { category, categoryId, selectCategory } = useCategoryFilter();
+  const limit = categoryId === undefined ? daily_limit : 0;
   const [params, setParams] = useSearchParams();
   const requested = params.get('dia');
-  // El día de la URL solo vale si es una fecha real del mes elegido; si no, se usa el día por defecto.
-  const day = isIsoDate(requested) && monthOf(requested) === month ? requested : defaultDay;
+  // Un enlace directo a un día también abre su mes al recargar.
+  useEffect(() => {
+    if (isIsoDate(requested)) setMonth(monthOf(requested));
+  }, [requested, setMonth]);
+  const day = isIsoDate(requested) ? requested : defaultDay;
+  const month = monthOf(day);
   const selectDay = (d: string) => {
-    if (monthOf(d) !== month) setMonth(monthOf(d));
-    const next = new URLSearchParams(params);
-    next.set('dia', d);
-    setParams(next);
+    if (d !== day) setParams({ dia: d });
   };
 
-  const strip = weekAround(day);
-  const dayTx = useTransactions({ start: day, end: day, limit: DAY_LIST_LIMIT });
-  const weekTx = useTransactions({ start: strip[0], end: strip.at(-1), limit: DAY_LIST_LIMIT });
-  const daysWithData = new Set(weekTx.data?.items.map((t) => t.date));
+  const monthly = useSummary(month, categoryId);
+  const [week, setWeek] = useState<{ day: string; start: number }>();
+  const days = monthly.data?.daily.filter(({ expense, income }) => expense > 0 || income > 0) ?? [];
+  const lastStart = Math.max(0, Math.floor((days.length - 1) / STRIP_DAYS) * STRIP_DAYS);
+  const selectedIndex = days.findIndex(({ date }) => date === day);
+  const defaultStart = Math.max(0, Math.floor(selectedIndex / STRIP_DAYS) * STRIP_DAYS);
+  const start = week?.day === day ? Math.min(week.start, lastStart) : defaultStart;
+  const visibleDays = days.slice(start, start + STRIP_DAYS);
+  const moveWeek = (direction: number) => {
+    setWeek({ day, start: Math.max(0, Math.min(lastStart, start + direction * STRIP_DAYS)) });
+  };
+  const dayTx = useTransactions({ start: day, end: day, limit: DAY_LIST_LIMIT, category_id: categoryId });
   const spent = dayTx.data?.expense_total ?? 0;
   const pct = limit ? Math.round((spent / limit) * 100) : 0;
   const ring = pct >= 100 ? '#FF8A5B' : pct >= 80 ? '#FFC24D' : '#3EE6B0';
@@ -271,21 +395,52 @@ export function DailyPage() {
 
   return (
     <div className="stack">
-      <div className="strip" role="group" aria-label="Elegir día">
-        {strip.map((d) => (
-          <button
-            key={d}
-            className={d === day ? 'on' : ''}
-            aria-pressed={d === day}
-            aria-label={formatDate(d, 'long')}
-            onClick={() => selectDay(d)}
-          >
-            <small>{formatDate(d, 'weekday')}</small>
-            <b>{parseIso(d).getDate()}</b>
-            <i className={daysWithData.has(d) ? 'has' : ''} />
-          </button>
-        ))}
-      </div>
+      <div className="toolbar"><CategoryFilter categoryId={categoryId} onChange={selectCategory} /></div>
+      {monthly.data ? (
+        <section className="expense-week" aria-label="Días con movimientos">
+          <div className="expense-week-nav">
+            <span className="muted" aria-live="polite">{monthLabel(month)}</span>
+            {lastStart > 0 && (
+              <div className="row-actions">
+                <button type="button" className="btn small" aria-label="Días anteriores" disabled={start === 0} onClick={() => moveWeek(-1)}>‹</button>
+                <button type="button" className="btn small" aria-label="Días siguientes" disabled={start >= lastStart} onClick={() => moveWeek(1)}>›</button>
+              </div>
+            )}
+          </div>
+          {visibleDays.length ? (
+          <div className="strip" role="group" aria-label="Elegir día con movimientos"
+            style={{ '--day-count': visibleDays.length } as CSSProperties}>
+            {visibleDays.map(({ date: d, expense, income }) => {
+              const selected = d === day;
+              const activity = [
+                expense > 0 && `gastos ${formatMoney(expense, currency)}`,
+                income > 0 && `ingresos ${formatMoney(income, currency)}`,
+              ].filter(Boolean).join(', ');
+              return (
+                <button
+                  type="button"
+                  key={d}
+                  className={selected ? 'on' : ''}
+                  aria-pressed={selected}
+                  aria-label={`${formatDate(d, 'long')}, ${activity}`}
+                  onClick={() => {
+                    setWeek({ day: d, start });
+                    selectDay(d);
+                  }}
+                >
+                  <small>{formatDate(d, 'weekday')}</small>
+                  <b>{parseIso(d).getDate()}</b>
+                  <span className="day-markers" aria-hidden="true">
+                    {expense > 0 && <i className="expense-mark" />}
+                    {income > 0 && <i className="income-mark" />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          ) : <p className="muted">No hay días con movimientos en este mes.</p>}
+        </section>
+      ) : <Loading error={monthly.error} />}
 
       <div className="grid auto">
         <section className="hero ring-card">
@@ -300,7 +455,7 @@ export function DailyPage() {
                 ? `Límite diario ${formatMoney(limit, currency)} · ${
                     spent > limit ? 'excedido' : `quedan ${formatMoney(limit - spent, currency)}`
                   }`
-                : 'Definí un límite diario en Ajustes'}
+                : category?.name ?? 'Definí un límite diario en Ajustes'}
             </span>
           </div>
         </section>
@@ -313,13 +468,13 @@ export function DailyPage() {
           <span className="muted">{dayTx.data?.total ?? 0} registros</span>
         </div>
         {dayTx.data ? (
-          <TransactionList items={dayTx.data.items} emptyText="Sin movimientos este día." />
+          <TransactionList items={dayTx.data.items} emptyText="Sin movimientos este día." allowSchedule />
         ) : (
           <Loading error={dayTx.error} />
         )}
       </section>
 
-      <MonthList month={month} />
+      <MonthList key={day} month={month} categoryId={categoryId} />
     </div>
   );
 }
