@@ -1,5 +1,5 @@
 # Las dependencias directas (requirements.in); requirements.txt es el lock con hashes de la imagen.
 -r requirements.in
-pytest==9.1.1
+pytest==9.2.0
 httpx==0.28.1
-ruff==0.8.4
+ruff==0.17.4
