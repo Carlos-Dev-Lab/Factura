@@ -1,7 +1,7 @@
 # 1) Compilación de la app React
 # Imágenes fijadas por digest: un rebuild usa exactamente la misma base. Dependabot propone las
 # actualizaciones (.github/dependabot.yml).
-FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS build
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
